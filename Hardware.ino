@@ -52,6 +52,7 @@ void initializeHardware() {
   }
   
   if(displayOK) {
+    display.setRotation(2); // Display mounted rotated 180 degrees
     Serial.println(F("[+] Display initialized successfully"));
     showStartupAnimation();
   }
