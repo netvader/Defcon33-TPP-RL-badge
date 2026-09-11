@@ -91,8 +91,13 @@ void initializeButtons() {
 
 void initializeSDCard(bool displayOK) {
   debugPrint("[+] Init SD Card...", true, displayOK, 500);
-  
-  if(!SD_MMC.begin("/sdcard", true)) { // 1-bit mode
+
+  if(!SD_MMC.setPins(SD_CLK, SD_CMD, SD_DAT0, SD_DAT1, SD_DAT2, SD_DAT3)) {
+    Serial.println(F("[!] Pin change failed!"));
+    return;
+  }
+
+  if(!SD_MMC.begin("/sdcard")) { // 4-bit mode
     Serial.println(F("[!] SD Card Mount Failed"));
     if(!SD_MMC.begin()) {
       Serial.println(F("[!] SD Card initialization failed"));
@@ -100,15 +105,15 @@ void initializeSDCard(bool displayOK) {
       sdCardPresent = false;
     } else {
       Serial.println(F("[+] SD Card initialized (4-bit mode)"));
-      debugPrint("SD Card OK!", true, displayOK, 500);
+      debugPrint("SD Card OK (4-Bit)!", true, displayOK, 500);
       sdCardPresent = true;
     }
   } else {
-    Serial.println(F("[+] SD Card initialized (1-bit mode)"));
+    Serial.println(F("[+] SD Card initialized (4-bit mode)"));
     debugPrint("SD Card OK!", true, displayOK, 500);
     sdCardPresent = true;
   }
-  
+
   if(sdCardPresent) {
     uint8_t cardType = SD_MMC.cardType();
     if(cardType == CARD_NONE) {
