@@ -30,6 +30,13 @@ uint8_t rxPixelHue = 0;
 unsigned long lastRXPixelUpdate = 0;
 int signalPixelBrightness = 0;
 
+// Raw pulse-timing capture (feeds sample[]/samplecount for "TX Last RX" and file save)
+volatile unsigned long isrLastEdge = 0;
+volatile int isrSampleIndex = 0;
+volatile bool isrCapturing = false;
+int captureGdoPin = -1;
+bool rxCaptureActive = false;
+
 // CC1101 Direct SPI functions
 byte readCC1101Register(byte addr) {
   int csPin = (activeModule == 0) ? CC1101_CS_A : CC1101_CS_B;
@@ -86,6 +93,37 @@ byte readCC1101Status(byte addr) {
   
   digitalWrite(csPin, HIGH);
   return value;
+}
+
+// Fires on every edge of the CC1101's demodulated data line (GDO0, configured
+// as async serial data output) and records the time since the previous edge.
+// This produces the same alternating HIGH/LOW pulse-width format that TX.ino's
+// sendLastRX()/sendRawData() replay - so whatever we capture here can be
+// transmitted back out or saved to SD as-is.
+void IRAM_ATTR rxEdgeISR() {
+  unsigned long now = micros();
+  unsigned long delta = now - isrLastEdge;
+  isrLastEdge = now;
+
+  if(!isrCapturing) return;
+  if(isrSampleIndex < SAMPLE_SIZE) {
+    sample[isrSampleIndex++] = delta;
+  }
+}
+
+void beginRawCapture() {
+  noInterrupts();
+  isrSampleIndex = 0;
+  isrLastEdge = micros();
+  isrCapturing = true;
+  interrupts();
+}
+
+void endRawCapture() {
+  noInterrupts();
+  isrCapturing = false;
+  samplecount = isrSampleIndex;
+  interrupts();
 }
 
 void refreshRXState() {
@@ -200,24 +238,36 @@ void startRX() {
   
   writeCC1101Register(0x07, 0x04); // PKTCTRL1
   writeCC1101Register(0x08, 0x00); // PKTCTRL0
-  
+
   // AGC settings
   writeCC1101Register(0x1B, 0x40); // AGCCTRL2
   writeCC1101Register(0x1C, 0x00); // AGCCTRL1
   writeCC1101Register(0x1D, 0x91); // AGCCTRL0
-  
+
+  // GDO0 outputs the demodulated bitstream (async serial data output) so we
+  // can capture raw pulse timings on it independently of the RSSI polling below
+  writeCC1101Register(0x02, 0x0D); // IOCFG0 - Serial Data Output, asynchronous
+
   // Flush RX FIFO
   strobeCC1101(0x3A); // SFRX
-  
+
   // Calibrate and enter RX
   strobeCC1101(0x33); // SCAL
   delay(5);
   strobeCC1101(0x34); // SRX
   delay(5);
-  
+
   Serial.println(F("[RX] CC1101 configured, calibrating baseline..."));
   Serial.printf("[RX] Frequency: %.2f MHz, Modulation: %s\n", frequency, getModulationName(mod));
-  
+
+  // Arm raw pulse capture on the GDO0 data line
+  captureGdoPin = (activeModule == 0) ? CC1101_GDO0_A : CC1101_GDO0_B;
+  pinMode(captureGdoPin, INPUT);
+  rxCaptureActive = false;
+  isrSampleIndex = 0;
+  isrCapturing = false;
+  attachInterrupt(digitalPinToInterrupt(captureGdoPin), rxEdgeISR, CHANGE);
+
   // Set pixel mode
   pixelMode = PIXEL_RX;
   pixels.clear();
@@ -226,11 +276,20 @@ void startRX() {
 
 void stopRX() {
   Serial.println(F("[RX] Stopping RX mode"));
-  
+
   raw_rx = "0";
   rxActive = false;
   pixelMode = PIXEL_MENU;
-  
+
+  if(rxCaptureActive) {
+    endRawCapture();
+    rxCaptureActive = false;
+  }
+  if(captureGdoPin != -1) {
+    detachInterrupt(digitalPinToInterrupt(captureGdoPin));
+    captureGdoPin = -1;
+  }
+
   strobeCC1101(0x36); // SIDLE
   
   SPI.endTransaction();
@@ -367,7 +426,13 @@ void updateWaterfall() {
   if(spike > 3) {  // Signal detected
     signalCount++;
     lastSignalTime = millis();
-    
+
+    if(!rxCaptureActive) {
+      beginRawCapture();
+      rxCaptureActive = true;
+      Serial.println(F("[RX] Signal capture started"));
+    }
+
     // Map spike to width
     int width = map(spike, 3, 40, 1, WATERFALL_WIDTH);
     width = constrain(width, 1, WATERFALL_WIDTH);
@@ -412,6 +477,23 @@ void updateWaterfall() {
     }
   } else {
     noSignalCount = 0;  // Reset on signal detection
+  }
+
+  // Finish an in-progress capture once the transmission has gone quiet for
+  // 300ms, or once the buffer is full - whichever comes first
+  if(rxCaptureActive && (millis() - lastSignalTime > 300 || isrSampleIndex >= SAMPLE_SIZE)) {
+    endRawCapture();
+    rxCaptureActive = false;
+
+    if(samplecount > 0) {
+      Serial.printf("[RX] Signal capture complete: %d samples\n", samplecount);
+
+      if(sdCardPresent) {
+        char fname[32];
+        snprintf(fname, sizeof(fname), "/rx_data/rx_%lu.txt", millis());
+        saveRXData(fname);
+      }
+    }
   }
 }
 

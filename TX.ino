@@ -3,7 +3,7 @@
 long data_to_send[2000];
 int data_count = 0;
 bool txActive = false;
-bool TX_DEMO_MODE = true;  // Set to false when SD card and RX save are working
+bool TX_DEMO_MODE = false;  // SD card (4-bit SDIO) and RX capture/save are now implemented
 
 // CC1101 Direct SPI functions
 byte writeTXRegister(byte addr, byte value, int module) {
