@@ -604,9 +604,13 @@ void handleMenuSelect() {
           Serial.println(F("[Menu] Stopping Jammer"));
           stopJammer();
           break;
+        case 2:
+          Serial.println(F("[Menu] Opening Jammer config"));
+          configureJammer();
+          break;
       }
       break;
-      
+
     case MENU_TESLA:
       switch(menuSelection) {
         case 0:
@@ -724,11 +728,15 @@ void handleMenuSelect() {
           currentMenu = MENU_LED_BRIGHTNESS;
           Serial.println(F("[Menu] Opening LED brightness control"));
           break;
+        case 2:
+          currentMenu = MENU_SETTINGS;
+          Serial.println(F("[Menu] Back to Settings"));
+          break;
       }
       menuSelection = 0;
       menuOffset = 0;
       break;
-      
+
     case MENU_LED_PATTERN:
       exitPatternMenu(true);  // Save the previewed pattern
       saveSettings();

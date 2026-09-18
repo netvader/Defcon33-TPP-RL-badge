@@ -336,7 +336,14 @@ void updateJammerDisplay() {
 
 void configureJammer() {
   Serial.println(F("\n[JAMMER] ===== JAMMER CONFIG ====="));
-  
+
+  // Wait for the button that opened this menu to be released first - otherwise
+  // it's still LOW on the very first check below and instantly selects option 0
+  while(digitalRead(BTN_SELECT) == LOW || digitalRead(BTN_RIGHT) == LOW) {
+    delay(10);
+  }
+  delay(150);
+
   bool configuring = true;
   int configOption = 0;
   const int numOptions = 4;

@@ -186,7 +186,14 @@ void listDirectory(const char* dirname, uint8_t levels) {
 
 void displayFileMenu() {
   Serial.println(F("\n[FILES] ========== FILE MENU =========="));
-  
+
+  // Wait for the button that opened this menu to be released first - otherwise
+  // it's still LOW on the very first check below and instantly selects option 0
+  while(digitalRead(BTN_SELECT) == LOW || digitalRead(BTN_RIGHT) == LOW) {
+    delay(10);
+  }
+  delay(150);
+
   bool inMenu = true;
   int menuOption = 0;
   const int numOptions = 5;
