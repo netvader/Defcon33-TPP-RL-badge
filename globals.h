@@ -348,6 +348,8 @@ void weatherPixelEffect();
 void tryDecodeWeather();
 void classifyWeather();
 bool decodeNexusWeather(unsigned long *samples, int count, float &tempC, int &humidity, uint8_t &id, bool &batteryLow);
+bool decodeGtWt02Weather(unsigned long *samples, int count, float &tempC, int &humidity, uint8_t &id, bool &batteryLow);
+bool decodeBresserWeather(unsigned long *samples, int count, float &tempC, int &humidity, uint8_t &id, bool &batteryLow);
 
 // File operations
 void initializeFileSystem();

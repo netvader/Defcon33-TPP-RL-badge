@@ -93,15 +93,121 @@ void classifyWeather() {
   }
 }
 
+#define GTWT02_FRAME_BITS 37
+#define GTWT02_TE_SHORT 500
+#define GTWT02_TE_LONG 2000
+#define GTWT02_TE_SYNC 9000 // te_short * 18
+#define GTWT02_TE_DELTA 200
+
+// GT-WT-02 (ALDI Globaltronics, Lidl Auriol and clones) - ported from
+// weather_station/protocols/gt_wt_02.c. Same PPM shape as Nexus (constant-width
+// HIGH mark, LOW gap carries the bit) but its own sync width, bit layout, and an
+// actual checksum (6-bit sum, modulo 64) rather than a fixed validity nibble.
+bool decodeGtWt02Weather(unsigned long *samples, int count, float &tempC, int &humidity, uint8_t &id, bool &batteryLow) {
+  for(int start = 1; start + GTWT02_FRAME_BITS * 2 <= count; start += 2) {
+    if(abs((long)samples[start] - GTWT02_TE_SYNC) > GTWT02_TE_DELTA * 4) continue;
+
+    uint64_t bits = 0;
+    bool ok = true;
+    for(int b = 0; b < GTWT02_FRAME_BITS; b++) {
+      unsigned long high = samples[start + 1 + b * 2];
+      unsigned long low = samples[start + 2 + b * 2];
+
+      if(abs((long)high - GTWT02_TE_SHORT) > GTWT02_TE_DELTA) {
+        ok = false;
+        break;
+      }
+      if(abs((long)low - GTWT02_TE_LONG) <= GTWT02_TE_DELTA * 2) {
+        bits = (bits << 1) | 0;
+      } else if(abs((long)low - GTWT02_TE_LONG * 2) <= GTWT02_TE_DELTA * 4) {
+        bits = (bits << 1) | 1;
+      } else {
+        ok = false;
+        break;
+      }
+    }
+    if(!ok) continue;
+
+    uint8_t sum = (bits >> 5) & 0x0E;
+    uint64_t tempData = bits >> 9;
+    for(int i = 0; i < 7; i++) sum += (tempData >> (i * 4)) & 0x0F;
+    if((uint8_t)(bits & 0x3F) != (sum & 0x3F)) continue; // checksum mismatch
+
+    id = (bits >> 29) & 0xFF;
+    batteryLow = (bits >> 28) & 0x01;
+    bool negative = (bits >> 24) & 0x01;
+    int magnitude = (bits >> 13) & 0x07FF;
+    tempC = negative ? -(float)(((~magnitude) & 0x07FF) + 1) / 10.0 : (float)magnitude / 10.0;
+    humidity = (bits >> 6) & 0x7F;
+    if(humidity <= 10) humidity = 0;       // sensor sends 10 below its 20% working range
+    else if(humidity > 90) humidity = 100; // and 110 above its 90% working range
+
+    return true;
+  }
+  return false;
+}
+
+#define BRESSER_FRAME_BITS 40
+#define BRESSER_TE_SHORT 250
+#define BRESSER_TE_LONG 500
+#define BRESSER_TE_DELTA 150
+
+// Bresser 3CH / Renkforce DM-7511 - ported from
+// weather_station/protocols/bresser_3ch.c. Real PWM (mark length carries the bit,
+// not the gap). No distinct sync marker simple enough to anchor on reliably from a
+// single capture, so this tries every possible bit-aligned offset and relies on the
+// real 8-bit byte-sum checksum to reject anything that isn't actually a valid frame.
+bool decodeBresserWeather(unsigned long *samples, int count, float &tempC, int &humidity, uint8_t &id, bool &batteryLow) {
+  for(int start = 0; start + BRESSER_FRAME_BITS * 2 <= count; start += 2) {
+    uint64_t bits = 0;
+    bool ok = true;
+    for(int b = 0; b < BRESSER_FRAME_BITS; b++) {
+      unsigned long high = samples[start + b * 2];
+      unsigned long low = samples[start + 1 + b * 2];
+      bool bitVal;
+      if(abs((long)high - BRESSER_TE_SHORT) <= BRESSER_TE_DELTA && abs((long)low - BRESSER_TE_LONG) <= BRESSER_TE_DELTA) {
+        bitVal = 0;
+      } else if(abs((long)high - BRESSER_TE_LONG) <= BRESSER_TE_DELTA && abs((long)low - BRESSER_TE_SHORT) <= BRESSER_TE_DELTA) {
+        bitVal = 1;
+      } else {
+        ok = false;
+        break;
+      }
+      bits = (bits << 1) | bitVal;
+    }
+    if(!ok) continue;
+
+    uint8_t sum = ((bits >> 32) & 0xFF) + ((bits >> 24) & 0xFF) + ((bits >> 16) & 0xFF) + ((bits >> 8) & 0xFF);
+    if((bits & 0xFF) != sum) continue; // checksum mismatch
+
+    id = (bits >> 32) & 0xFF;
+    batteryLow = (bits >> 31) & 0x01;
+    int rawTemp = (bits >> 16) & 0x0FFF;
+    float tempF = (rawTemp - 900) / 10.0; // encoded as Fahrenheit, offset 90, scaled 10
+    tempC = (tempF - 32.0) * 5.0 / 9.0;
+    humidity = (bits >> 8) & 0xFF;
+
+    return true;
+  }
+  return false;
+}
+
 // Called from RX.ino right after a raw capture finishes, while weatherListening is active
 void tryDecodeWeather() {
   float tempC;
   int humidity;
   uint8_t id;
   bool batteryLow;
+  const char* protoName;
 
-  if(!decodeNexusWeather(sample, samplecount, tempC, humidity, id, batteryLow)) {
-    Serial.println(F("[Weather] Capture did not decode as a Nexus-style weather frame"));
+  if(decodeNexusWeather(sample, samplecount, tempC, humidity, id, batteryLow)) {
+    protoName = "Nexus-TH";
+  } else if(decodeGtWt02Weather(sample, samplecount, tempC, humidity, id, batteryLow)) {
+    protoName = "GT-WT-02";
+  } else if(decodeBresserWeather(sample, samplecount, tempC, humidity, id, batteryLow)) {
+    protoName = "Bresser-3CH";
+  } else {
+    Serial.println(F("[Weather] Capture did not decode as a known weather-sensor frame"));
     return;
   }
 
@@ -114,8 +220,8 @@ void tryDecodeWeather() {
 
   classifyWeather();
 
-  Serial.printf("[Weather] Sensor 0x%02X: %.1f C, %d%% RH, battery %s -> condition %d\n",
-                id, tempC, humidity == 0xFF ? -1 : humidity, batteryLow ? "LOW" : "OK", (int)weatherCondition);
+  Serial.printf("[Weather] %s sensor 0x%02X: %.1f C, %d%% RH, battery %s -> condition %d\n",
+                protoName, id, tempC, humidity == 0xFF ? -1 : humidity, batteryLow ? "LOW" : "OK", (int)weatherCondition);
 }
 
 void startWeatherStation() {
