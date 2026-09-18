@@ -594,8 +594,13 @@ void handleMenuSelect() {
           Serial.println(F("[Menu] Opening TX config"));
           break;
         case 1:
+          // startTX() alone only arms the transmitter (STX) with no data and no
+          // way to stop it from this menu - it's meant as a setup step for the
+          // other TX functions, not something to fire on its own. sendTestPattern()
+          // is a complete action: sends 4 recognizable patterns and calls stopTX()
+          // when done, which is what "Simple TX" should actually do.
           Serial.println(F("[Menu] Starting simple TX"));
-          startTX();  // This will run demo mode if TX_DEMO_MODE is true
+          sendTestPattern();
           break;
         case 2:
           currentMenu = MENU_TX_BINARY;

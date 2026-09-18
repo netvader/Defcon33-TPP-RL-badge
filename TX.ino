@@ -639,8 +639,14 @@ void loadTXFromFile() {
   display.println(F("=[ TX FILES ]="));
   display.println(F(""));
   
-  // List RX files
-  File root = SD_MMC.open("/");
+  // List RX files - these are saved to /rx_data by saveRXData() (RX.ino), not root
+  File root = SD_MMC.open("/rx_data");
+  if(!root) {
+    display.println(F("No /rx_data dir"));
+    display.display();
+    delay(2000);
+    return;
+  }
   File file = root.openNextFile();
   int fileCount = 0;
   String fileNames[20];
@@ -671,7 +677,7 @@ void loadTXFromFile() {
   // For now, just use the first file
   // TODO: Add file selection menu
   if(fileCount > 0) {
-    loadAndTransmitFile("/" + fileNames[0]);
+    loadAndTransmitFile("/rx_data/" + fileNames[0]);
   }
 }
 
@@ -848,11 +854,12 @@ void sendTestPattern() {
   strobeTX(0x35, activeModule); // STX
   
   for(int p = 0; p < 4; p++) {
+    display.fillRect(0, 20, 128, 20, SH110X_BLACK); // clear the previous pattern's text first
     display.setCursor(0, 20);
     display.printf("Pattern %d/4\n", p + 1);
     display.println(patterns[p]);
     display.display();
-    
+
     Serial.printf("[TX] Sending pattern %d: %s\n", p + 1, patterns[p]);
     
     // Send pattern 5 times
