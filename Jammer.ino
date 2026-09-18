@@ -441,7 +441,15 @@ void configureJammer() {
 
 void adjustJammerFrequency() {
   Serial.println(F("[JAMMER] Adjusting frequency"));
-  
+
+  // Wait for the button that opened this screen to be released first - it's
+  // checked again below as the exit condition, so a still-held SELECT/RIGHT would
+  // otherwise exit again immediately, before any adjustment could be made
+  while(digitalRead(BTN_SELECT) == LOW || digitalRead(BTN_RIGHT) == LOW) {
+    delay(10);
+  }
+  delay(150);
+
   bool adjusting = true;
   
   while(adjusting) {
@@ -484,9 +492,16 @@ void adjustJammerFrequency() {
 
 void adjustJammerPower() {
   Serial.println(F("[JAMMER] Adjusting power"));
-  
+
+  // Wait for the button that opened this screen to be released first - same
+  // reasoning as adjustJammerFrequency()
+  while(digitalRead(BTN_SELECT) == LOW || digitalRead(BTN_RIGHT) == LOW) {
+    delay(10);
+  }
+  delay(150);
+
   bool adjusting = true;
-  
+
   while(adjusting) {
     display.clearDisplay();
     display.setCursor(0,0);

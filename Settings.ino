@@ -314,9 +314,18 @@ void resetToFactory() {
   display.println(F("LEFT = Cancel"));
   display.display();
   
+  // Wait for RIGHT/SELECT/LEFT to be released first - only reachable via the
+  // serial "reset" command today (not a physical menu item), but a held button
+  // at that moment would otherwise wipe the EEPROM immediately with no real
+  // confirmation, so guard it the same way as the other confirm screens anyway
+  while(digitalRead(BTN_RIGHT) == LOW || digitalRead(BTN_SELECT) == LOW || digitalRead(BTN_LEFT) == LOW) {
+    delay(10);
+  }
+  delay(150);
+
   bool waiting = true;
   unsigned long startTime = millis();
-  
+
   while(waiting && (millis() - startTime < 10000)) { // 10 second timeout
     if(digitalRead(BTN_RIGHT) == LOW || digitalRead(BTN_SELECT) == LOW) {
       // Confirmed

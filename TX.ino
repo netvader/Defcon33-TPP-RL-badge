@@ -371,9 +371,17 @@ void sendBinaryData() {
   Serial.println(F("[TX] Send 'x' to exit"));
   Serial.println(F("[TX] Send 't' to transmit"));
   
+  // Wait for the SELECT/RIGHT that opened this screen to be released first -
+  // otherwise the check below cancels immediately, before the serial prompt
+  // above is ever actually usable
+  while(digitalRead(BTN_LEFT) == LOW || digitalRead(BTN_SELECT) == LOW || digitalRead(BTN_RIGHT) == LOW) {
+    delay(10);
+  }
+  delay(150);
+
   String binaryData = "";
   bool collecting = true;
-  
+
   while(collecting) {
     // Check buttons
     if(digitalRead(BTN_LEFT) == LOW || digitalRead(BTN_SELECT) == LOW) {
