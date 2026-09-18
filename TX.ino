@@ -302,7 +302,16 @@ void startTX() {
   
   txActive = true;
   pixelMode = PIXEL_TX;
-  
+  // The bit-bang transmit loops that follow this (sendRawData(), sendLastRX(), etc.)
+  // are tight timing-critical delayMicroseconds() loops that never call
+  // updatePixels() themselves, and by the time they return here to stopTX(),
+  // pixelMode is already reverted - so without this, the TX NeoPixel effect never
+  // actually got a chance to render even a single frame. One explicit render here
+  // (bypassing updatePixels()'s own 20ms rate limit) lights it for the whole
+  // transmission instead.
+  lastPixelUpdate = 0;
+  updatePixels();
+
   Serial.println(F("[TX] TX mode initialized"));
 }
 

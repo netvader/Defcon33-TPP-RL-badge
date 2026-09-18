@@ -9,23 +9,39 @@ void handleButtons() {
   
   if (millis() - lastButtonPress < buttonDebounce) return;
   
+  // Weather Station uses raw_rx=="1" (it's built on startRX()) but has its own
+  // button layout - UP/DOWN cycles frequency, everything else exits. Handled here,
+  // before the generic RX blocks below, since those would otherwise swallow LEFT
+  // into cycleRXVisualization() (a no-op stub) instead of exiting, and UP/DOWN/
+  // RIGHT/SELECT into stopWeatherStation() instead of changing frequency.
+  if (raw_rx == "1" && currentMenu == MENU_WEATHER) {
+    if (digitalRead(BTN_UP) == LOW) {
+      lastButtonPress = millis();
+      weatherCycleFrequency(1);
+    } else if (digitalRead(BTN_DOWN) == LOW) {
+      lastButtonPress = millis();
+      weatherCycleFrequency(-1);
+    } else if (digitalRead(BTN_LEFT) == LOW || digitalRead(BTN_RIGHT) == LOW ||
+               digitalRead(BTN_SELECT) == LOW) {
+      lastButtonPress = millis();
+      stopWeatherStation();
+    }
+    return;
+  }
+
   // Special handling for LEFT button during RX mode to change visualization
   if (raw_rx == "1" && digitalRead(BTN_LEFT) == LOW) {
     lastButtonPress = millis();
     cycleRXVisualization();
     return;
   }
-  
-  // If in RX (or Weather Station) mode and any other button is pressed, stop and go back to menu
+
+  // If in RX mode and any other button is pressed, stop RX and go back to menu
   if (raw_rx == "1") {
     if (digitalRead(BTN_UP) == LOW || digitalRead(BTN_DOWN) == LOW ||
         digitalRead(BTN_RIGHT) == LOW || digitalRead(BTN_SELECT) == LOW) {
       lastButtonPress = millis();
-      if(currentMenu == MENU_WEATHER) {
-        stopWeatherStation();
-      } else {
-        stopRX();
-      }
+      stopRX();
       return;
     }
   }

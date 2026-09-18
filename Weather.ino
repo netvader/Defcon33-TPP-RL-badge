@@ -309,6 +309,46 @@ void startWeatherStation() {
   pixelMode = PIXEL_WEATHER;
 }
 
+// UP/DOWN in Weather Station mode - cycles the shared frequency list (same one
+// Settings/Full Duplex use). All four decoded sensor families (Nexus-TH, GT-WT-02,
+// Bresser-3CH, Acurite-606TX) are documented as 433.92MHz devices - that stays the
+// default - but EU variants of some of these commonly show up on 868.3MHz instead,
+// which is why that's worth being able to switch to without leaving the mode.
+//
+// NOTE: this badge's CC1101 modules are Ebyte E07 units, physically tuned for
+// ~387-464MHz (see the same E07 range check in SubFile.ino) - selecting a
+// frequency like 868 or 915 here will write valid CC1101 registers for that band,
+// but the E07's antenna/matching network isn't built for it, so reception there
+// will likely be poor or nonexistent regardless of what the registers say.
+void weatherCycleFrequency(int direction) {
+  frequencyIndex = (frequencyIndex + direction + numFrequencies) % numFrequencies;
+  frequency = commonFrequencies[frequencyIndex];
+
+  byte freq2, freq1, freq0;
+  if(frequency >= 433 && frequency <= 435) { freq2 = 0x10; freq1 = 0xB0; freq0 = 0x7A; }
+  else if(frequency >= 314 && frequency <= 316) { freq2 = 0x0C; freq1 = 0x4E; freq0 = 0xC4; }
+  else if(frequency >= 867 && frequency <= 869) { freq2 = 0x21; freq1 = 0x65; freq0 = 0x6A; }
+  else if(frequency >= 914 && frequency <= 916) { freq2 = 0x23; freq1 = 0x31; freq0 = 0x3B; }
+  else { freq2 = 0x10; freq1 = 0xB0; freq0 = 0x7A; }
+
+  writeCC1101Register(0x0D, freq2);
+  writeCC1101Register(0x0E, freq1);
+  writeCC1101Register(0x0F, freq0);
+
+  strobeCC1101(0x33); // SCAL
+  delay(5);
+  strobeCC1101(0x34); // SRX
+  delay(5);
+
+  // The noise floor can shift with frequency - recalibrate the baseline
+  baselineSet = false;
+  baselineStartTime = millis();
+  baselineSamples = 0;
+  baselineSum = 0;
+
+  Serial.printf("[Weather] Frequency: %.2f MHz\n", frequency);
+}
+
 void stopWeatherStation() {
   Serial.println(F("[Weather] Stopping weather station"));
 
@@ -350,12 +390,12 @@ void drawWeatherMenu() {
   display.drawLine(0, 9, 127, 9, SH110X_WHITE);
 
   display.setCursor(0, 14);
-  display.printf("Packets: %d\n", weatherPacketCount);
+  display.printf("%.2fMHz  Pkts:%d\n", frequency, weatherPacketCount);
 
   if(weatherPacketCount == 0) {
     display.setCursor(0, 30);
     display.println(F("Listening..."));
-    display.printf("%.2f MHz OOK\n", frequency);
+    display.print(F("UP/DN = frequency"));
   } else {
     display.setCursor(0, 26);
     display.printf("Sensor: 0x%02X\n", lastWeatherSensorId);

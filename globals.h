@@ -382,6 +382,7 @@ void handleWeatherMode();
 void drawWeatherMenu();
 void weatherPixelEffect();
 void tryDecodeWeather();
+void weatherCycleFrequency(int direction);
 void classifyWeather();
 bool decodeNexusWeather(unsigned long *samples, int count, float &tempC, int &humidity, uint8_t &id, bool &batteryLow);
 bool decodeGtWt02Weather(unsigned long *samples, int count, float &tempC, int &humidity, uint8_t &id, bool &batteryLow);

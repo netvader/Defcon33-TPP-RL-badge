@@ -58,6 +58,11 @@ void sendTeslaSignal() {
   
   pixelMode = PIXEL_TESLA;
   teslaStartTime = millis();
+  // animateTeslaDelay() below only renders between repeats, never for a single
+  // transmission (or after the last one) - without an explicit render here, a
+  // 1-shot send (or a short teslaDelay) meant the LED effect never visibly showed
+  lastPixelUpdate = 0;
+  updatePixels();
   
   // Use whichever module is available
   if(activeModule == 0 && !cc1101APresent) {
