@@ -270,7 +270,13 @@ void displayFileMenu() {
 
 void viewFiles(const char* path) {
   Serial.printf("[FILES] Viewing files in %s\n", path);
-  
+
+  // Wait for the button that opened this screen to be released first
+  while(digitalRead(BTN_SELECT) == LOW || digitalRead(BTN_RIGHT) == LOW) {
+    delay(10);
+  }
+  delay(150);
+
   File root = SD_MMC.open(path);
   if(!root || !root.isDirectory()) {
     debugPrint("Cannot open dir!", true, true, 2000);
@@ -369,7 +375,13 @@ void viewFiles(const char* path) {
 
 void fileOptions(const char* filename) {
   Serial.printf("[FILES] File options for %s\n", filename);
-  
+
+  // Wait for the button that opened this screen to be released first
+  while(digitalRead(BTN_SELECT) == LOW || digitalRead(BTN_RIGHT) == LOW) {
+    delay(10);
+  }
+  delay(150);
+
   bool inOptions = true;
   int option = 0;
   const int numOptions = 4;
@@ -378,33 +390,37 @@ void fileOptions(const char* filename) {
     display.clearDisplay();
     display.setCursor(0,0);
     display.println(F("=[ FILE OPS ]="));
-    display.println(F(""));
-    
-    // Show filename (truncated)
+
+    // Show filename (truncated) - was previously followed by two blank lines,
+    // pushing the option list's last two entries below the 64px display
     String shortName = String(filename);
     int lastSlash = shortName.lastIndexOf('/');
     if(lastSlash >= 0) {
       shortName = shortName.substring(lastSlash + 1);
     }
+    if(shortName.length() > 21) {
+      shortName = shortName.substring(0, 18) + "...";
+    }
+    display.setCursor(0, 9);
     display.println(shortName);
-    display.println(F(""));
-    
+    display.drawLine(0, 17, 127, 17, SH110X_WHITE);
+
     const char* options[] = {
       "View",
       "Transmit",
       "Delete",
       "Back"
     };
-    
+
     for(int i = 0; i < numOptions; i++) {
       if(i == option) {
-        display.fillRect(0, 40 + i*10, 128, 10, SH110X_WHITE);
+        display.fillRect(0, 20 + i*11, 128, 11, SH110X_WHITE);
         display.setTextColor(SH110X_BLACK);
       } else {
         display.setTextColor(SH110X_WHITE);
       }
       
-      display.setCursor(2, 41 + i*10);
+      display.setCursor(2, 22 + i*11);
       display.print(options[i]);
     }
     
@@ -481,9 +497,16 @@ void viewFileContent(const char* filename) {
     
     display.display();
     file.close();
-    
+
+    // Wait for the button that opened this screen to be released first - same
+    // held-button issue as showCardInfo() had
+    while(digitalRead(BTN_LEFT) == LOW || digitalRead(BTN_SELECT) == LOW) {
+      delay(10);
+    }
+    delay(150);
+
     // Wait for button
-    while(digitalRead(BTN_LEFT) == HIGH && 
+    while(digitalRead(BTN_LEFT) == HIGH &&
           digitalRead(BTN_SELECT) == HIGH) {
       delay(10);
     }
@@ -522,7 +545,15 @@ void deleteFileConfirm(const char* filename) {
   display.println(F("RIGHT = Delete"));
   display.println(F("LEFT = Cancel"));
   display.display();
-  
+
+  // Wait for the button that opened this screen to be released first - without
+  // this, a still-held RIGHT/SELECT from the previous menu deletes the file
+  // immediately, before the user ever sees this confirmation
+  while(digitalRead(BTN_RIGHT) == LOW || digitalRead(BTN_SELECT) == LOW || digitalRead(BTN_LEFT) == LOW) {
+    delay(10);
+  }
+  delay(150);
+
   bool waiting = true;
   unsigned long startTime = millis();
   
@@ -587,11 +618,21 @@ void showCardInfo() {
   display.println(F(""));
   display.println(F("Press any button"));
   display.display();
-  
+
+  // Wait for whatever button opened this screen to be released first - otherwise
+  // it's still held down and the "wait for a button" loop below exits immediately,
+  // which is why this used to flash by instead of staying open
+  while(digitalRead(BTN_UP) == LOW || digitalRead(BTN_DOWN) == LOW ||
+        digitalRead(BTN_LEFT) == LOW || digitalRead(BTN_RIGHT) == LOW ||
+        digitalRead(BTN_SELECT) == LOW) {
+    delay(10);
+  }
+  delay(150);
+
   // Wait for button
-  while(digitalRead(BTN_UP) == HIGH && 
+  while(digitalRead(BTN_UP) == HIGH &&
         digitalRead(BTN_DOWN) == HIGH &&
-        digitalRead(BTN_LEFT) == HIGH && 
+        digitalRead(BTN_LEFT) == HIGH &&
         digitalRead(BTN_RIGHT) == HIGH &&
         digitalRead(BTN_SELECT) == HIGH) {
     delay(10);

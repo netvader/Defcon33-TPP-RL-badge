@@ -566,23 +566,27 @@ void handleMenuSelect() {
     case MENU_TX:
       switch(menuSelection) {
         case 0:
+          currentMenu = MENU_TX_CONFIG;
+          Serial.println(F("[Menu] Opening TX config"));
+          break;
+        case 1:
           Serial.println(F("[Menu] Starting simple TX"));
           startTX();  // This will run demo mode if TX_DEMO_MODE is true
           break;
-        case 1:
+        case 2:
           currentMenu = MENU_TX_BINARY;
           Serial.println(F("[Menu] Opening Binary TX"));
           // Don't call handleTXBinaryMenu here, it will be called in handleButtons()
-          break;
-        case 2:
-          Serial.println(F("[Menu] TX Last RX"));
-          sendLastRX();  // This will run demo mode if TX_DEMO_MODE is true
           break;
         case 3:
           Serial.println(F("[Menu] TX from file"));
           loadTXFromFile();  // This will run demo mode if TX_DEMO_MODE is true
           break;
         case 4:
+          Serial.println(F("[Menu] TX Last RX"));
+          sendLastRX();  // This will run demo mode if TX_DEMO_MODE is true
+          break;
+        case 5:
           Serial.println(F("[Menu] TX from Flipper .sub file"));
           loadFlipperSubFile();
           break;
@@ -697,9 +701,15 @@ void handleMenuSelect() {
           menuOffset = 0;
           Serial.println(F("[Menu] Opening frequency selector from RX config"));
           break;
+        case 3: // Back
+          currentMenu = MENU_RX;
+          menuSelection = 0;
+          menuOffset = 0;
+          Serial.println(F("[Menu] Back to RX menu"));
+          break;
       }
       break;
-      
+
     case MENU_TX_CONFIG:
       switch(menuSelection) {
         case 0: // Frequency
@@ -715,9 +725,15 @@ void handleMenuSelect() {
           menuOffset = 0;
           Serial.println(F("[Menu] Opening frequency selector from TX config"));
           break;
+        case 3: // Back
+          currentMenu = MENU_TX;
+          menuSelection = 0;
+          menuOffset = 0;
+          Serial.println(F("[Menu] Back to TX menu"));
+          break;
       }
       break;
-      
+
     case MENU_DISPLAY_SETTINGS:
       switch(menuSelection) {
         case 0:
@@ -762,7 +778,7 @@ int getMaxMenuItems() {
   switch(currentMenu) {
     case MENU_MAIN: return 9;
     case MENU_RX: return 4;
-    case MENU_TX: return 5;  // Simple TX, Binary TX, TX Last RX, TX from File, Flipper .sub
+    case MENU_TX: return 6;  // Configure, Simple TX, Binary TX, TX from File, Last RX, Flipper .sub
     case MENU_JAMMER: return 3;
     case MENU_TESLA: return 2;
     case MENU_SETTINGS: return 5;

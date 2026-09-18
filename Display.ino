@@ -131,13 +131,14 @@ void drawTXMenu() {
   
   const char* menuItems[] = {
     "Configure",
+    "Simple TX",
     "Binary TX",
     "TX from File",
     "Last RX",
     "Flipper .sub"
   };
 
-  int itemCount = 5;
+  int itemCount = 6;
   drawMenuItems(menuItems, itemCount);
 }
 

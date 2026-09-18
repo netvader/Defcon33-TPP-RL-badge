@@ -1069,13 +1069,11 @@ void loadFlipperSubFile() {
     SD_MMC.mkdir(SUBGHZ_DIR);
   }
 
-  display.clearDisplay();
-  display.setCursor(0, 0);
-  display.println(F("=[ FLIPPER .SUB ]="));
-  display.println(F(""));
-
   File dir = SD_MMC.open(SUBGHZ_DIR);
   if(!dir) {
+    display.clearDisplay();
+    display.setCursor(0, 0);
+    display.println(F("=[ FLIPPER .SUB ]="));
     display.println(F("No /subghz dir"));
     display.display();
     delay(2000);
@@ -1091,15 +1089,15 @@ void loadFlipperSubFile() {
     if(name.endsWith(".sub")) {
       fileNames[fileCount] = name;
       fileCount++;
-
-      if(fileCount <= 5) {
-        display.println(name);
-      }
     }
     file = dir.openNextFile();
   }
+  dir.close();
 
   if(fileCount == 0) {
+    display.clearDisplay();
+    display.setCursor(0, 0);
+    display.println(F("=[ FLIPPER .SUB ]="));
     display.println(F("No .sub files found"));
     display.println(F("Copy to /subghz"));
     display.display();
@@ -1107,34 +1105,76 @@ void loadFlipperSubFile() {
     return;
   }
 
-  display.setCursor(0, 56);
-  display.print(F("SELECT=send LEFT=back"));
-  display.display();
-  Serial.printf("[TX] Found %d .sub files - SELECT to send \"%s\", LEFT to cancel\n", fileCount, fileNames[0].c_str());
-
   // Wait for the button that opened this menu to be released first - otherwise it's
-  // still LOW on the very first check below and instantly "confirms", which is why
-  // this used to fire immediately no matter how fast you let go
+  // still LOW on the very first check below and would instantly act on it
   while(digitalRead(BTN_SELECT) == LOW || digitalRead(BTN_RIGHT) == LOW) {
     delay(10);
   }
   delay(150); // settle past contact bounce
 
+  // Browse the list - UP/DOWN to move, SELECT/RIGHT to send the highlighted file, LEFT to cancel
+  int selected = 0;
+  int fileOffset = 0;
+  const int maxVisible = 4;
+  bool browsing = true;
   bool confirmed = false;
-  while(true) {
-    if(digitalRead(BTN_SELECT) == LOW) { confirmed = true; break; }
-    if(digitalRead(BTN_LEFT) == LOW) { confirmed = false; break; }
+
+  while(browsing) {
+    display.clearDisplay();
+    display.setCursor(0, 0);
+    display.print(F("=[ FLIPPER .SUB ]="));
+    display.setCursor(90, 0);
+    display.printf("%d/%d", selected + 1, fileCount);
+    display.drawLine(0, 9, 127, 9, SH110X_WHITE);
+
+    for(int i = 0; i < maxVisible && (fileOffset + i) < fileCount; i++) {
+      if(fileOffset + i == selected) {
+        display.fillRect(0, 12 + i * 12, 128, 12, SH110X_WHITE);
+        display.setTextColor(SH110X_BLACK);
+      } else {
+        display.setTextColor(SH110X_WHITE);
+      }
+      display.setCursor(2, 15 + i * 12);
+      String shortName = fileNames[fileOffset + i];
+      if(shortName.length() > 20) {
+        shortName = shortName.substring(0, 17) + "...";
+      }
+      display.print(shortName);
+    }
+    display.setTextColor(SH110X_WHITE);
+    display.display();
+
+    if(millis() - lastButtonPress > buttonDebounce) {
+      if(digitalRead(BTN_UP) == LOW) {
+        lastButtonPress = millis();
+        if(selected > 0) {
+          selected--;
+          if(selected < fileOffset) fileOffset = selected;
+        }
+      } else if(digitalRead(BTN_DOWN) == LOW) {
+        lastButtonPress = millis();
+        if(selected < fileCount - 1) {
+          selected++;
+          if(selected >= fileOffset + maxVisible) fileOffset = selected - maxVisible + 1;
+        }
+      } else if(digitalRead(BTN_SELECT) == LOW || digitalRead(BTN_RIGHT) == LOW) {
+        lastButtonPress = millis();
+        confirmed = true;
+        browsing = false;
+      } else if(digitalRead(BTN_LEFT) == LOW) {
+        lastButtonPress = millis();
+        browsing = false;
+      }
+    }
     delay(10);
   }
-  delay(200); // debounce past the button release
 
   if(!confirmed) {
     Serial.println(F("[TX] Flipper .sub cancelled"));
     return;
   }
 
-  // For now, just use the first file (same limitation as loadTXFromFile())
-  // TODO: Add file selection menu
-  String path = String(SUBGHZ_DIR) + "/" + fileNames[0];
+  Serial.printf("[TX] Sending \"%s\"\n", fileNames[selected].c_str());
+  String path = String(SUBGHZ_DIR) + "/" + fileNames[selected];
   parseAndSendSubFile(path);
 }
