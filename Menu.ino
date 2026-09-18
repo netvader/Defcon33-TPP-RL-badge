@@ -512,17 +512,17 @@ void handleMenuSelect() {
           currentMenu = MENU_TESLA;
           Serial.println(F("[Menu] Opening Tesla menu"));
           break;
-        case 4: 
-          currentMenu = MENU_SETTINGS;
-          Serial.println(F("[Menu] Opening Settings menu"));
-          break;
-        case 5:
+        case 4:
           Serial.println(F("[Menu] Opening Weather Station"));
           startWeatherStation();
           break;
-        case 6:
+        case 5:
           Serial.println(F("[Menu] Opening Full Duplex"));
           startFullDuplex();
+          break;
+        case 6:
+          currentMenu = MENU_SETTINGS;
+          Serial.println(F("[Menu] Opening Settings menu"));
           break;
         case 7:
           currentMenu = MENU_ABOUT;
@@ -552,13 +552,17 @@ void handleMenuSelect() {
           currentMenu = MENU_RX_CONFIG;
           Serial.println(F("[Menu] Opening RX config"));
           break;
-        case 2:  
+        case 2:
           Serial.println(F("[Menu] Stopping RX"));
           stopRX();
           break;
+        case 3:
+          Serial.println(F("[Menu] Opening file browser"));
+          displayFileMenu();
+          break;
       }
       break;
-      
+
     case MENU_TX:
       switch(menuSelection) {
         case 0:

@@ -1112,8 +1112,14 @@ void loadFlipperSubFile() {
   display.display();
   Serial.printf("[TX] Found %d .sub files - SELECT to send \"%s\", LEFT to cancel\n", fileCount, fileNames[0].c_str());
 
-  // Wait for the user to actually confirm before firing anything - previously this
-  // sent the first file immediately, so the overview was only visible for an instant
+  // Wait for the button that opened this menu to be released first - otherwise it's
+  // still LOW on the very first check below and instantly "confirms", which is why
+  // this used to fire immediately no matter how fast you let go
+  while(digitalRead(BTN_SELECT) == LOW || digitalRead(BTN_RIGHT) == LOW) {
+    delay(10);
+  }
+  delay(150); // settle past contact bounce
+
   bool confirmed = false;
   while(true) {
     if(digitalRead(BTN_SELECT) == LOW) { confirmed = true; break; }

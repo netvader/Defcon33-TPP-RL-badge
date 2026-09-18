@@ -84,9 +84,9 @@ void drawMainMenu() {
     "TX Mode",
     "Jammer",
     "Tesla",
-    "Settings",
     "Weather",
     "Full Duplex",
+    "Settings",
     "About",
     "Credits"
   };

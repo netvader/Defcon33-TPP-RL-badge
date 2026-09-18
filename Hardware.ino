@@ -69,6 +69,7 @@ void initializeHardware() {
   
   // Initialize SD Card
   initializeSDCard(displayOK);
+  initializeFileSystem(); // creates /rx_data, /tx_data, /logs, /config, /subghz - was never called before, so saving RX data always failed
   
   // Test CC1101 SPI before full initialization
   testCC1101SPI();

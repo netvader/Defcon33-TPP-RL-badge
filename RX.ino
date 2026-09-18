@@ -506,44 +506,36 @@ void updateWaterfall() {
 void drawWaterfall() {
   display.clearDisplay();
   
-  // Header
+  // Header - two rows, since "433.9MHz A" alone can run past x=60 and collided
+  // with the delta/signal-count fields when they were crammed onto the same row
   display.setTextSize(1);
   display.setTextColor(SH110X_WHITE);
   display.setCursor(0, 0);
   display.print(frequency, 1);
   display.print(F("MHz "));
   display.print(activeModule == 0 ? 'A' : 'B');
-  
-  // Show instant RSSI delta (not averaged)
-  display.setCursor(50, 0);
+
+  display.setCursor(0, 9);
   int delta = instantRSSI - baselineRSSI;
-  if(delta > 0) {
-    display.printf("+%d", delta);
-  } else {
-    display.print(delta);
-  }
-  
-  // Signal count
-  display.setCursor(90, 0);
-  display.printf("S:%d", signalCount);
-  
+  display.printf("RSSI:%+d  Sig:%d", delta, signalCount);
+
   // Signal indicator (based on instant signal detection)
   if(millis() - lastSignalTime < 100) {
-    display.fillCircle(120, 4, 3, SH110X_WHITE);
+    display.fillCircle(122, 4, 3, SH110X_WHITE);
   }
-  
+
   // Draw separator
-  display.drawLine(0, 9, 127, 9, SH110X_WHITE);
-  
+  display.drawLine(0, 18, 127, 18, SH110X_WHITE);
+
   // Draw waterfall
-  for(int y = 0; y < WATERFALL_HEIGHT && (y + 11) < 64; y++) {
+  for(int y = 0; y < WATERFALL_HEIGHT && (y + 20) < 64; y++) {
     for(int byteX = 0; byteX < WATERFALL_WIDTH / 8; byteX++) {
       uint8_t byte = waterfallBuffer[y][byteX];
       if(byte != 0) {
         for(int bit = 0; bit < 8; bit++) {
           if(byte & (1 << (7 - bit))) {
             int x = byteX * 8 + bit;
-            display.drawPixel(x, y + 11, SH110X_WHITE);
+            display.drawPixel(x, y + 20, SH110X_WHITE);
           }
         }
       }
