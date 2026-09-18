@@ -17,25 +17,32 @@
 // = microseconds. That maps directly onto sendRawData()'s existing alternating
 // HIGH/LOW format, so RAW playback just needs parsing, no protocol decoding.
 //
-// "Princeton" (PT2262-style fixed-code remotes - garage doors, driveway sensors, etc.)
-// is the one keyed protocol implemented here, since it's simple and widely documented:
-// each bit is one TE-scaled short/long pulse pair, followed by a sync gap. Any other
-// Protocol: value is reported as unsupported rather than guessed at.
+// Princeton, Holtek, Ansonic and Hormann are fixed-code PWM protocols (no rolling
+// code) - each bit is a mark/space pair, so their encoders are ported directly from
+// the real Flipper firmware source (lib/subghz/protocols/*.c on
+// flipperdevices/flipperzero-firmware) rather than guessed at. Legrand is likewise
+// ported, but reads its own "TE:" field from the file like Princeton does, instead
+// of using a fixed built-in timing.
 //
-// IMPORTANT: the Princeton bit/sync timing ratios below are from public protocol
-// write-ups (e.g. rc-switch/rtl_433), not verified against a real remote - I had no
-// hardware to test this against. RAW playback needs no such protocol knowledge, so
-// it should be the more reliable path for anything captured directly off a Flipper.
+// NOT implemented:
+// - Somfy (Telis/Keytis): impossible without protocol-specific hardware knowledge -
+//   even Flipper's own firmware can't send it (.yield = NULL in its encoder), since
+//   Somfy RTS uses a real encrypted rolling code tied to the physical remote's own
+//   secret counter. RAW playback of a captured Somfy signal still works, just not
+//   "encode from a Key".
+// - Hollarm: its real encoder needs a button/channel value it doesn't visibly read
+//   from the file in the source I read, and computes a checksum I couldn't verify
+//   without a real remote - left out rather than guessing.
+// - Every other named protocol (KeeLoq family, Nice, Came, Security+, etc.): each
+//   is its own can of worms (rolling codes, per-manufacturer key derivation) - out
+//   of scope here.
+//
+// Any Protocol: value not listed above is reported as unsupported rather than guessed at.
 
 #define SUBGHZ_DIR "/subghz"
 
-bool sendPrincetonFromKey(String keyHex, int bitCount, int te) {
-  if(bitCount <= 0 || bitCount > 32 || te <= 0) {
-    Serial.println(F("[TX] Invalid Princeton parameters in .sub file"));
-    return false;
-  }
-
-  uint32_t code = 0;
+uint64_t parseHexKey(String keyHex) {
+  uint64_t code = 0;
   int idx = 0;
   while(idx < (int)keyHex.length()) {
     while(idx < (int)keyHex.length() && keyHex[idx] == ' ') idx++;
@@ -45,6 +52,16 @@ bool sendPrincetonFromKey(String keyHex, int bitCount, int te) {
       code = (code << 8) | strtoul(keyHex.substring(start, idx).c_str(), NULL, 16);
     }
   }
+  return code;
+}
+
+bool sendPrincetonFromKey(String keyHex, int bitCount, int te) {
+  if(bitCount <= 0 || bitCount > 32 || te <= 0) {
+    Serial.println(F("[TX] Invalid Princeton parameters in .sub file"));
+    return false;
+  }
+
+  uint32_t code = parseHexKey(keyHex);
 
   data_count = 0;
   for(int b = bitCount - 1; b >= 0 && data_count < 1996; b--) {
@@ -63,6 +80,129 @@ bool sendPrincetonFromKey(String keyHex, int bitCount, int te) {
 
   Serial.printf("[TX] Princeton: %d bits, TE=%dus, code=0x%08lX\n", bitCount, te, (unsigned long)code);
   sendRawData(data_to_send, data_count, 5); // fixed-code remotes are usually repeated several times
+  return true;
+}
+
+// Holtek HT12A/HT12E-family encoder chip (te_short=430us, te_long=870us, 40 bits)
+bool sendHoltekFromKey(String keyHex, int bitCount) {
+  const int te_short = 430, te_long = 870;
+  if(bitCount <= 0 || bitCount > 40) {
+    Serial.println(F("[TX] Invalid Holtek bit count in .sub file"));
+    return false;
+  }
+
+  uint64_t code = parseHexKey(keyHex);
+
+  data_count = 0;
+  data_to_send[data_count++] = te_short; // start bit (HIGH)
+  for(int i = bitCount - 1; i >= 0 && data_count < 1996; i--) {
+    bool bitVal = (code >> i) & 0x01;
+    if(bitVal) {
+      data_to_send[data_count++] = te_long;  // LOW
+      data_to_send[data_count++] = te_short; // HIGH
+    } else {
+      data_to_send[data_count++] = te_short; // LOW
+      data_to_send[data_count++] = te_long;  // HIGH
+    }
+  }
+
+  Serial.printf("[TX] Holtek: %d bits, code=0x%08lX%08lX\n", bitCount, (unsigned long)(code >> 32), (unsigned long)code);
+  sendRawData(data_to_send, data_count, 5);
+  return true;
+}
+
+// Ansonic (te_short=555us, te_long=1111us, typically 12 bits)
+bool sendAnsonicFromKey(String keyHex, int bitCount) {
+  const int te_short = 555, te_long = 1111;
+  if(bitCount <= 0 || bitCount > 32) {
+    Serial.println(F("[TX] Invalid Ansonic bit count in .sub file"));
+    return false;
+  }
+
+  uint32_t code = parseHexKey(keyHex);
+
+  data_count = 0;
+  data_to_send[data_count++] = te_short; // start bit (HIGH)
+  for(int i = bitCount - 1; i >= 0 && data_count < 1996; i--) {
+    bool bitVal = (code >> i) & 0x01;
+    if(bitVal) {
+      data_to_send[data_count++] = te_short; // LOW
+      data_to_send[data_count++] = te_long;  // HIGH
+    } else {
+      data_to_send[data_count++] = te_long;  // LOW
+      data_to_send[data_count++] = te_short; // HIGH
+    }
+  }
+
+  Serial.printf("[TX] Ansonic: %d bits, code=0x%08lX\n", bitCount, (unsigned long)code);
+  sendRawData(data_to_send, data_count, 5);
+  return true;
+}
+
+// Hormann (te_short=500us, te_long=1000us) - garage door openers using this simple
+// fixed-code scheme (older non-BiSecur units); the real remote's 12000us start mark
+// is kept, but the "20 internal loops x 10 outer repeats" of the original firmware
+// is reduced to a flat 5x via sendRawData()'s transmissions param
+bool sendHormannFromKey(String keyHex, int bitCount) {
+  const int te_short = 500, te_long = 1000;
+  if(bitCount <= 0 || bitCount > 44) {
+    Serial.println(F("[TX] Invalid Hormann bit count in .sub file"));
+    return false;
+  }
+
+  uint64_t code = parseHexKey(keyHex);
+
+  data_count = 0;
+  data_to_send[data_count++] = te_short * 24; // start bit (HIGH, long)
+  data_to_send[data_count++] = te_short;      // LOW
+  for(int i = bitCount - 1; i >= 0 && data_count < 1996; i--) {
+    bool bitVal = (code >> i) & 0x01;
+    if(bitVal) {
+      data_to_send[data_count++] = te_long;  // HIGH
+      data_to_send[data_count++] = te_short; // LOW
+    } else {
+      data_to_send[data_count++] = te_short; // HIGH
+      data_to_send[data_count++] = te_long;  // LOW
+    }
+  }
+
+  Serial.printf("[TX] Hormann: %d bits, code=0x%08lX%08lX\n", bitCount, (unsigned long)(code >> 32), (unsigned long)code);
+  sendRawData(data_to_send, data_count, 5);
+  return true;
+}
+
+// Legrand (In'O home automation) - te comes from the file's own "TE:" field, and the
+// protocol repeats 5x internally with a sync gap before each repeat
+bool sendLegrandFromKey(String keyHex, int bitCount, int te) {
+  if(bitCount <= 0 || bitCount > 32 || te <= 0) {
+    Serial.println(F("[TX] Invalid Legrand parameters in .sub file"));
+    return false;
+  }
+
+  uint32_t code = parseHexKey(keyHex);
+
+  data_count = 0;
+  for(int r = 0; r < 5 && data_count < 1900; r++) {
+    if(r > 0) {
+      data_to_send[data_count++] = te * 16; // sync gap (LOW) before repeats after the first
+    }
+    for(int i = bitCount - 1; i >= 0 && data_count < 1996; i--) {
+      bool bitVal = (code >> i) & 0x01;
+      if(i == bitCount - 1) {
+        // first bit of this repeat is a lone mark (no preceding low component)
+        data_to_send[data_count++] = bitVal ? (te * 3) : te;
+      } else if(bitVal) {
+        data_to_send[data_count++] = te;     // LOW
+        data_to_send[data_count++] = te * 3; // HIGH
+      } else {
+        data_to_send[data_count++] = te * 3; // LOW
+        data_to_send[data_count++] = te;     // HIGH
+      }
+    }
+  }
+
+  Serial.printf("[TX] Legrand: %d bits, TE=%dus, code=0x%08lX\n", bitCount, te, (unsigned long)code);
+  sendRawData(data_to_send, data_count, 2); // repeats are already baked into the buffer above
   return true;
 }
 
@@ -148,6 +288,18 @@ bool parseAndSendSubFile(String filename) {
 
   if(protocol == "Princeton") {
     return sendPrincetonFromKey(keyHex, bitCount, te);
+  }
+  if(protocol == "Holtek") {
+    return sendHoltekFromKey(keyHex, bitCount);
+  }
+  if(protocol == "Ansonic") {
+    return sendAnsonicFromKey(keyHex, bitCount);
+  }
+  if(protocol == "Hormann") {
+    return sendHormannFromKey(keyHex, bitCount);
+  }
+  if(protocol == "Legrand") {
+    return sendLegrandFromKey(keyHex, bitCount, te);
   }
 
   Serial.printf("[TX] Unsupported .sub protocol: %s\n", protocol.c_str());

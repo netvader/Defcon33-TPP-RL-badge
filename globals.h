@@ -282,7 +282,12 @@ void drawTXBinaryMenu();
 void sendTestPattern();
 void loadFlipperSubFile();
 bool parseAndSendSubFile(String filename);
+uint64_t parseHexKey(String keyHex);
 bool sendPrincetonFromKey(String keyHex, int bitCount, int te);
+bool sendHoltekFromKey(String keyHex, int bitCount);
+bool sendAnsonicFromKey(String keyHex, int bitCount);
+bool sendHormannFromKey(String keyHex, int bitCount);
+bool sendLegrandFromKey(String keyHex, int bitCount, int te);
 
 // Jammer functions
 void startJammer();
