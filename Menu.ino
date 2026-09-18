@@ -191,8 +191,12 @@ void processSerialCommand(String cmd) {
   }
   else if(cmd == "stop") {
     Serial.println(F("[SERIAL] Stopping current operation"));
-    if(raw_rx == "1") stopRX();
+    if(raw_rx == "1") {
+      if(currentMenu == MENU_WEATHER) stopWeatherStation();
+      else stopRX();
+    }
     if(jammer_tx == "1") stopJammer();
+    if(fdActive) stopFullDuplex();
     currentMenu = MENU_MAIN;
     updateDisplay();
   }
@@ -217,6 +221,30 @@ void processSerialCommand(String cmd) {
       startJammer();
     } else {
       Serial.println(F("[SERIAL] No CC1101 detected!"));
+    }
+  }
+  else if(cmd == "weather") {
+    if(cc1101APresent || cc1101BPresent) {
+      Serial.println(F("[SERIAL] Starting Weather Station"));
+      startWeatherStation();
+    } else {
+      Serial.println(F("[SERIAL] No CC1101 detected!"));
+    }
+  }
+  else if(cmd == "fullduplex" || cmd == "fd") {
+    if(cc1101APresent && cc1101BPresent) {
+      Serial.println(F("[SERIAL] Starting Full Duplex"));
+      startFullDuplex();
+    } else {
+      Serial.println(F("[SERIAL] Full Duplex needs both CC1101 modules!"));
+    }
+  }
+  else if(cmd == "replay") {
+    if(currentMenu == MENU_FULLDUPLEX) {
+      fdAutoReplay = !fdAutoReplay;
+      Serial.printf("[SERIAL] Full Duplex auto-replay: %s\n", fdAutoReplay ? "ON" : "OFF");
+    } else {
+      Serial.println(F("[SERIAL] Not in Full Duplex mode"));
     }
   }
   // Configuration commands with parameters
@@ -296,6 +324,9 @@ void printSerialHelp() {
   Serial.println(F("  rx        - Start RX mode"));
   Serial.println(F("  tesla     - Send Tesla signal"));
   Serial.println(F("  jammer    - Start jammer"));
+  Serial.println(F("  weather   - Start Weather Station"));
+  Serial.println(F("  fullduplex (or fd) - Start Full Duplex (needs both modules)"));
+  Serial.println(F("  replay    - Toggle Full Duplex auto-replay"));
   Serial.println(F("  stop      - Stop current operation"));
   Serial.println(F(""));
   Serial.println(F("Configuration:"));

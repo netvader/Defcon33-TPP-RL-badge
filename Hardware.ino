@@ -581,6 +581,13 @@ const char* creditLines[] = {
   "  TPP Crew",
   "  Argh mateys!",
   "",
+  "Fork v2 by:",
+  "  netvader",
+  "  w/ Claude Code",
+  "  (vibecoded -",
+  "   use at own risk,",
+  "   no warranty)",
+  "",
   "DEF CON 33",
   "2025",
   "",
@@ -596,11 +603,12 @@ void drawAbout() {
   display.setCursor(0,0);
   display.println(F("=[ ABOUT ]="));
   display.println(F(""));
-  display.println(F("TPP Badge v1.0"));
+  display.println(F("The Pirates'"));
+  display.println(F("Plunder Badge"));
   display.println(F("DEF CON 33"));
   display.println(F(""));
-  display.println(F("The Pirates'"));
-  display.println(F("Plunder"));
+  display.println(F("Fork v2 (netvader)"));
+  display.println(F("See Credits"));
 }
 
 void drawCredits() {
