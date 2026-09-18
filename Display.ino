@@ -33,6 +33,9 @@ void updateDisplay() {
     case MENU_WEATHER:
       drawWeatherMenu();
       break;
+    case MENU_FULLDUPLEX:
+      drawFullDuplexMenu();
+      break;
     case MENU_RX_CONFIG:
       drawRXConfig();
       break;
@@ -84,10 +87,11 @@ void drawMainMenu() {
     "Settings",
     "About",
     "Credits",
-    "Weather"
+    "Weather",
+    "Full Duplex"
   };
 
-  int itemCount = 8;
+  int itemCount = 9;
   drawMenuItems(menuItems, itemCount);
 }
 

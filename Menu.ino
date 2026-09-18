@@ -35,6 +35,21 @@ void handleButtons() {
     handleTXBinaryMenu();
     return;
   }
+
+  // Full Duplex mode isn't tied to raw_rx (it runs its own background task) -
+  // SELECT toggles auto-replay, any other button exits
+  if (currentMenu == MENU_FULLDUPLEX) {
+    if (digitalRead(BTN_SELECT) == LOW) {
+      lastButtonPress = millis();
+      fdAutoReplay = !fdAutoReplay;
+      Serial.printf("[FullDuplex] Auto-replay: %s\n", fdAutoReplay ? "ON" : "OFF");
+    } else if (digitalRead(BTN_UP) == LOW || digitalRead(BTN_DOWN) == LOW ||
+               digitalRead(BTN_LEFT) == LOW || digitalRead(BTN_RIGHT) == LOW) {
+      lastButtonPress = millis();
+      stopFullDuplex();
+    }
+    return;
+  }
   
   // Normal menu navigation when not in RX mode
   if (digitalRead(BTN_UP) == LOW) {
@@ -513,6 +528,10 @@ void handleMenuSelect() {
           Serial.println(F("[Menu] Opening Weather Station"));
           startWeatherStation();
           break;
+        case 8:
+          Serial.println(F("[Menu] Opening Full Duplex"));
+          startFullDuplex();
+          break;
       }
       menuSelection = 0;
       menuOffset = 0;
@@ -729,7 +748,7 @@ void handleMenuSelect() {
 
 int getMaxMenuItems() {
   switch(currentMenu) {
-    case MENU_MAIN: return 8;
+    case MENU_MAIN: return 9;
     case MENU_RX: return 4;
     case MENU_TX: return 5;  // Simple TX, Binary TX, TX Last RX, TX from File, Flipper .sub
     case MENU_JAMMER: return 3;

@@ -192,6 +192,69 @@ bool decodeBresserWeather(unsigned long *samples, int count, float &tempC, int &
   return false;
 }
 
+#define ACURITE606_FRAME_BITS 32
+#define ACURITE606_TE_SHORT 500
+#define ACURITE606_TE_LONG 2000
+#define ACURITE606_TE_SYNC 8500 // te_short * 17
+#define ACURITE606_TE_DELTA 200
+
+// Acurite-606TX - ported from weather_station/protocols/acurite_606tx.c. Same PPM
+// shape as Nexus/GT-WT-02, validated against its real LFSR-8 checksum (a standard,
+// well-documented digest function, ported as-is from blocks/math.c) rather than a
+// fixed validity nibble or plain sum.
+bool decodeAcurite606Weather(unsigned long *samples, int count, float &tempC, int &humidity, uint8_t &id, bool &batteryLow) {
+  for(int start = 1; start + ACURITE606_FRAME_BITS * 2 <= count; start += 2) {
+    if(abs((long)samples[start] - ACURITE606_TE_SYNC) > ACURITE606_TE_DELTA * 4) continue;
+
+    uint64_t bits = 0;
+    bool ok = true;
+    for(int b = 0; b < ACURITE606_FRAME_BITS; b++) {
+      unsigned long high = samples[start + 1 + b * 2];
+      unsigned long low = samples[start + 2 + b * 2];
+
+      if(abs((long)high - ACURITE606_TE_SHORT) > ACURITE606_TE_DELTA) {
+        ok = false;
+        break;
+      }
+      if(abs((long)low - ACURITE606_TE_LONG) <= ACURITE606_TE_DELTA * 2) {
+        bits = (bits << 1) | 0;
+      } else if(abs((long)low - ACURITE606_TE_LONG * 2) <= ACURITE606_TE_DELTA * 4) {
+        bits = (bits << 1) | 1;
+      } else {
+        ok = false;
+        break;
+      }
+    }
+    if(!ok) continue;
+
+    uint8_t msg[3] = {
+      (uint8_t)(bits >> 24),
+      (uint8_t)(bits >> 16),
+      (uint8_t)(bits >> 8)
+    };
+    uint8_t sum = 0;
+    uint8_t key = 0xF1;
+    for(int byteIdx = 0; byteIdx < 3; byteIdx++) {
+      uint8_t data = msg[byteIdx];
+      for(int i = 7; i >= 0; i--) {
+        if((data >> i) & 1) sum ^= key;
+        key = (key & 1) ? ((key >> 1) ^ 0x98) : (key >> 1);
+      }
+    }
+    if(sum != (bits & 0xFF)) continue; // checksum mismatch
+
+    id = (bits >> 24) & 0xFF;
+    batteryLow = (bits >> 23) & 0x01;
+    bool negative = (bits >> 19) & 0x01;
+    int magnitude = (bits >> 8) & 0x07FF;
+    tempC = negative ? -(float)(((~magnitude) & 0x07FF) + 1) / 10.0 : (float)magnitude / 10.0;
+    humidity = 0xFF; // Acurite-606TX doesn't send humidity
+
+    return true;
+  }
+  return false;
+}
+
 // Called from RX.ino right after a raw capture finishes, while weatherListening is active
 void tryDecodeWeather() {
   float tempC;
@@ -206,6 +269,8 @@ void tryDecodeWeather() {
     protoName = "GT-WT-02";
   } else if(decodeBresserWeather(sample, samplecount, tempC, humidity, id, batteryLow)) {
     protoName = "Bresser-3CH";
+  } else if(decodeAcurite606Weather(sample, samplecount, tempC, humidity, id, batteryLow)) {
+    protoName = "Acurite-606TX";
   } else {
     Serial.println(F("[Weather] Capture did not decode as a known weather-sensor frame"));
     return;

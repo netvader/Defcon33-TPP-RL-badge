@@ -213,6 +213,10 @@ void updatePixels() {
     case PIXEL_WEATHER:
       weatherPixelEffect();
       break;
+
+    case PIXEL_FULLDUPLEX:
+      fullDuplexPixelEffect();
+      break;
   }
   
   pixels.show();

@@ -83,6 +83,10 @@ void loop() {
       handleRXMode();
     }
   }
+
+  if(currentMenu == MENU_FULLDUPLEX) {
+    handleFullDuplexMode();
+  }
   
   if(jammer_tx == "1") {
     runJammer();

@@ -53,6 +53,15 @@
 //   etc.: each needs its own rolling-code/key-derivation scheme - out of scope here.
 //
 // Any Protocol: value not listed above is reported as unsupported rather than guessed at.
+//
+// The badge's CC1101 modules are Ebyte E07 units, which (per the E07-M1101D-SMA
+// datasheet - the E07 doesn't have a single fixed range, it varies by exact SKU)
+// only tune ~387-464 MHz. A .sub file's Frequency: is checked against that range
+// before anything is sent - files for other bands (315MHz, 868MHz, 915MHz, etc.)
+// are rejected rather than silently tuned to the nearest thing the hardware can do.
+
+#define E07_FREQ_MIN_HZ 387000000UL
+#define E07_FREQ_MAX_HZ 464000000UL
 
 #define SUBGHZ_DIR "/subghz"
 
@@ -912,6 +921,18 @@ bool parseAndSendSubFile(String filename) {
   f.close();
 
   if(fileFreqHz > 0) {
+    if(fileFreqHz < E07_FREQ_MIN_HZ || fileFreqHz > E07_FREQ_MAX_HZ) {
+      Serial.printf("[TX] Rejected .sub file: %.3f MHz is outside the E07 module's ~%.0f-%.0f MHz range\n",
+                    fileFreqHz / 1000000.0, E07_FREQ_MIN_HZ / 1000000.0, E07_FREQ_MAX_HZ / 1000000.0);
+      display.clearDisplay();
+      display.setCursor(0, 0);
+      display.println(F("Freq out of range"));
+      display.printf("%.3f MHz\n", fileFreqHz / 1000000.0);
+      display.printf("E07: %.0f-%.0fMHz\n", E07_FREQ_MIN_HZ / 1000000.0, E07_FREQ_MAX_HZ / 1000000.0);
+      display.display();
+      delay(2500);
+      return false;
+    }
     frequency = fileFreqHz / 1000000.0;
   }
   if(preset.indexOf("Ook") >= 0) mod = 2;

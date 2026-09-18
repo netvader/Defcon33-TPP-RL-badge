@@ -80,7 +80,8 @@ enum MenuState {
   MENU_LED_BRIGHTNESS,
   MENU_FREQUENCY_SELECT,
   MENU_TESLA_CONFIG,
-  MENU_WEATHER
+  MENU_WEATHER,
+  MENU_FULLDUPLEX
 };
 
 // Weather station condition, derived from decoded temperature/humidity
@@ -139,7 +140,8 @@ enum PixelMode {
   PIXEL_JAMMER,
   PIXEL_TESLA,
   PIXEL_MENU,
-  PIXEL_WEATHER
+  PIXEL_WEATHER,
+  PIXEL_FULLDUPLEX
 };
 
 // Global variables
@@ -188,6 +190,12 @@ extern int teslaDelay;
 // Jammer configuration
 extern int jammerPower;
 extern bool jammerSweep;
+
+// Full duplex sniff-and-replay (module A = RX, module B = TX, run concurrently)
+extern bool fdActive;
+extern bool fdAutoReplay;
+extern int fdPacketsCaptured;
+extern int fdPacketsReplayed;
 
 // Weather station
 extern bool weatherListening;
@@ -357,6 +365,13 @@ uint16_t calculateChecksum();
 void resetToFactory();
 void exportSettings();
 
+// Full duplex functions
+void startFullDuplex();
+void stopFullDuplex();
+void handleFullDuplexMode();
+void drawFullDuplexMenu();
+void fullDuplexPixelEffect();
+
 // Weather station functions
 void startWeatherStation();
 void stopWeatherStation();
@@ -368,6 +383,7 @@ void classifyWeather();
 bool decodeNexusWeather(unsigned long *samples, int count, float &tempC, int &humidity, uint8_t &id, bool &batteryLow);
 bool decodeGtWt02Weather(unsigned long *samples, int count, float &tempC, int &humidity, uint8_t &id, bool &batteryLow);
 bool decodeBresserWeather(unsigned long *samples, int count, float &tempC, int &humidity, uint8_t &id, bool &batteryLow);
+bool decodeAcurite606Weather(unsigned long *samples, int count, float &tempC, int &humidity, uint8_t &id, bool &batteryLow);
 
 // File operations
 void initializeFileSystem();
