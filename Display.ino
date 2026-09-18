@@ -85,10 +85,10 @@ void drawMainMenu() {
     "Jammer",
     "Tesla",
     "Settings",
-    "About",
-    "Credits",
     "Weather",
-    "Full Duplex"
+    "Full Duplex",
+    "About",
+    "Credits"
   };
 
   int itemCount = 9;

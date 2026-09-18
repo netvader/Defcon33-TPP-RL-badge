@@ -295,14 +295,10 @@ void drawFullDuplexMenu() {
   display.println(F("=[ FULL DUPLEX ]="));
   display.drawLine(0, 9, 127, 9, SH110X_WHITE);
 
-  display.setCursor(0, 14);
-  display.printf("A(RX) -> B(TX)\n");
-  display.printf("%.2f MHz\n", frequency);
-  display.println();
-  display.printf("Captured: %d\n", fdPacketsCaptured);
-  display.printf("Replayed: %d\n", fdPacketsReplayed);
-  display.println();
-  display.printf("Auto-replay: %s\n", fdAutoReplay ? "ON" : "OFF");
+  display.setCursor(0, 12);
+  display.printf("A(RX) -> B(TX)  %.2f\n", frequency);
+  display.printf("Cap:%d Rep:%d\n", fdPacketsCaptured, fdPacketsReplayed);
+  display.printf("Replay: %s\n", fdAutoReplay ? "ON" : "OFF");
   display.print(F("SELECT=toggle"));
 
   display.display();

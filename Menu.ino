@@ -516,21 +516,21 @@ void handleMenuSelect() {
           currentMenu = MENU_SETTINGS;
           Serial.println(F("[Menu] Opening Settings menu"));
           break;
-        case 5: 
-          currentMenu = MENU_ABOUT;
-          Serial.println(F("[Menu] Opening About"));
-          break;
-        case 6:
-          currentMenu = MENU_CREDITS;
-          Serial.println(F("[Menu] Opening Credits"));
-          break;
-        case 7:
+        case 5:
           Serial.println(F("[Menu] Opening Weather Station"));
           startWeatherStation();
           break;
-        case 8:
+        case 6:
           Serial.println(F("[Menu] Opening Full Duplex"));
           startFullDuplex();
+          break;
+        case 7:
+          currentMenu = MENU_ABOUT;
+          Serial.println(F("[Menu] Opening About"));
+          break;
+        case 8:
+          currentMenu = MENU_CREDITS;
+          Serial.println(F("[Menu] Opening Credits"));
           break;
       }
       menuSelection = 0;

@@ -582,10 +582,11 @@ void sendRawData(long *data, int count, int transmissions) {
   for (int r = 0; r < transmissions; r++) {
     Serial.printf("[TX] Transmission %d/%d\n", r + 1, transmissions);
     
+    display.fillRect(0, 40, 128, 10, SH110X_BLACK); // clear the previous count first, or digits overlap
     display.setCursor(0, 40);
     display.printf("TX: %d/%d", r + 1, transmissions);
     display.display();
-    
+
     for (int i = 0; i < count; i += 2) {
       digitalWrite(txPin, HIGH);
       delayMicroseconds(data[i]);

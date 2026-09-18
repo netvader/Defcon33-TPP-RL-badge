@@ -1107,8 +1107,25 @@ void loadFlipperSubFile() {
     return;
   }
 
+  display.setCursor(0, 56);
+  display.print(F("SELECT=send LEFT=back"));
   display.display();
-  Serial.printf("[TX] Found %d .sub files\n", fileCount);
+  Serial.printf("[TX] Found %d .sub files - SELECT to send \"%s\", LEFT to cancel\n", fileCount, fileNames[0].c_str());
+
+  // Wait for the user to actually confirm before firing anything - previously this
+  // sent the first file immediately, so the overview was only visible for an instant
+  bool confirmed = false;
+  while(true) {
+    if(digitalRead(BTN_SELECT) == LOW) { confirmed = true; break; }
+    if(digitalRead(BTN_LEFT) == LOW) { confirmed = false; break; }
+    delay(10);
+  }
+  delay(200); // debounce past the button release
+
+  if(!confirmed) {
+    Serial.println(F("[TX] Flipper .sub cancelled"));
+    return;
+  }
 
   // For now, just use the first file (same limitation as loadTXFromFile())
   // TODO: Add file selection menu

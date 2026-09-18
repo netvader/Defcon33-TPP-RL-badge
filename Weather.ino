@@ -337,6 +337,11 @@ void handleWeatherMode() {
 }
 
 void drawWeatherMenu() {
+  // Let RX's own "Calibrating... RSSI: X" screen (updateWaterfall()) stay up
+  // uninterrupted during the ~1s baseline phase - drawing over it here for a single
+  // frame is what caused the brief flicker when opening Weather Station
+  if(!baselineSet) return;
+
   display.clearDisplay();
   display.setTextSize(1);
   display.setTextColor(SH110X_WHITE);
