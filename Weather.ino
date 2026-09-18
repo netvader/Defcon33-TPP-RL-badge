@@ -7,17 +7,18 @@
 // sun, red for too hot, and a soft grey "cloud" animation for anything in between.
 //
 // This decodes ONE protocol family - "Nexus"-style sensors (Nexus, Solight TE82S,
-// Rubicson 1444 and various clones), which is one of the simpler ones the Flipper
-// app supports. It reuses the raw pulse-timing capture already wired up in RX.ino
-// (see beginRawCapture()/rxEdgeISR()) rather than re-implementing signal capture.
+// Rubicson 1444, FreeTec NC-7345/NX-3980 and various clones), which is one of the
+// simpler ones the Flipper app supports. It reuses the raw pulse-timing capture
+// already wired up in RX.ino (see beginRawCapture()/rxEdgeISR()) rather than
+// re-implementing signal capture.
 //
-// IMPORTANT: the exact Nexus bit-timings/field layout below are taken from public
-// protocol write-ups (e.g. rtl_433's nexus.c), not verified against a real sensor -
-// I had no badge or sensor to test this against. The bit decoder classifies each
-// pulse as short/long relative to the capture's OWN average width rather than fixed
-// microsecond constants, which should make it more tolerant of clone-to-clone clock
-// differences, but the field layout (id/battery/channel/temp/humidity bit positions)
-// may need adjusting against a real sensor if it doesn't decode anything useful.
+// Ported from the real decoder in flipperdevices/flipperzero-good-faps
+// (weather_station/protocols/nexus_th.c, dev branch) rather than guessed at:
+// PPM/distance-coded, HIGH mark is always ~500us, and the LOW gap after it decides
+// the bit (~1000us = 0, ~2000us = 1); a sync gap of ~4000us precedes each 36-bit
+// frame, sent 12x per transmission. Field layout, MSB first:
+//   id(8) battery_low(1, inverted) unused(1) channel(2) sign(1) temp_magnitude(11)
+//   const(4, must be 0xF - used as a basic validity check) humidity(8)
 
 bool weatherListening = false;
 WeatherCondition weatherCondition = WEATHER_NONE;
@@ -29,55 +30,55 @@ int weatherPacketCount = 0;
 unsigned long lastWeatherPacketTime = 0;
 
 #define NEXUS_FRAME_BITS 36
+#define NEXUS_TE_SHORT 500
+#define NEXUS_TE_LOW_0 1000
+#define NEXUS_TE_LOW_1 2000
+#define NEXUS_TE_SYNC  4000
+#define NEXUS_TE_DELTA 200
 
 // samples[] holds alternating HIGH,LOW pulse durations in microseconds (starting
-// with a HIGH), exactly as captured by RX.ino's rxEdgeISR(). Nexus-style sensors are
-// PWM-encoded: each data bit is one HIGH pulse whose width is either "short" (a 0)
-// or "long" (a 1), followed by a roughly fixed LOW gap.
+// with a HIGH), exactly as captured by RX.ino's rxEdgeISR(). Scan for a sync gap
+// (~4000us LOW), then try to decode the 36 bits that follow it.
 bool decodeNexusWeather(unsigned long *samples, int count, float &tempC, int &humidity, uint8_t &id, bool &batteryLow) {
-  if(count < NEXUS_FRAME_BITS * 2) return false;
+  for(int start = 1; start + NEXUS_FRAME_BITS * 2 <= count; start += 2) {
+    long syncDiff = (long)samples[start] - NEXUS_TE_SYNC;
+    if(abs(syncDiff) > NEXUS_TE_DELTA * 2) continue;
 
-  unsigned long highs[SAMPLE_SIZE / 2];
-  int highCount = 0;
-  for(int i = 0; i < count && highCount < (int)(sizeof(highs) / sizeof(highs[0])); i += 2) {
-    highs[highCount++] = samples[i];
+    uint64_t bits = 0;
+    bool ok = true;
+    for(int b = 0; b < NEXUS_FRAME_BITS; b++) {
+      unsigned long high = samples[start + 1 + b * 2];
+      unsigned long low = samples[start + 2 + b * 2];
+
+      if(abs((long)high - NEXUS_TE_SHORT) > NEXUS_TE_DELTA) {
+        ok = false;
+        break;
+      }
+      if(abs((long)low - NEXUS_TE_LOW_0) <= NEXUS_TE_DELTA) {
+        bits = (bits << 1) | 0;
+      } else if(abs((long)low - NEXUS_TE_LOW_1) <= NEXUS_TE_DELTA * 2) {
+        bits = (bits << 1) | 1;
+      } else {
+        ok = false;
+        break;
+      }
+    }
+    if(!ok) continue;
+
+    // "const" nibble must be 0xF - the only integrity check this frame format has
+    if(((bits >> 8) & 0x0F) != 0x0F) continue;
+
+    id = (bits >> 28) & 0xFF;
+    batteryLow = !((bits >> 27) & 0x01);
+    bool negative = (bits >> 23) & 0x01;
+    int magnitude = (bits >> 12) & 0x07FF;
+    tempC = negative ? -(float)(((~magnitude) & 0x07FF) + 1) / 10.0 : (float)magnitude / 10.0;
+    humidity = bits & 0xFF;
+
+    return true;
   }
-  if(highCount < NEXUS_FRAME_BITS) return false;
 
-  // Calibrate the short/long threshold from the back half of the capture - a sync
-  // preamble (short pulses), if present, sits at the start and would skew a plain average
-  int calStart = highCount / 2;
-  unsigned long sum = 0;
-  for(int i = calStart; i < highCount; i++) sum += highs[i];
-  unsigned long avg = sum / (highCount - calStart);
-  if(avg == 0) return false;
-
-  // Skip a leading sync preamble: pulses much shorter than the calibrated average
-  int startIdx = 0;
-  while(startIdx < highCount - NEXUS_FRAME_BITS && highs[startIdx] < (avg / 2)) startIdx++;
-
-  if(highCount - startIdx != NEXUS_FRAME_BITS) return false;
-
-  uint64_t bits = 0;
-  for(int i = 0; i < NEXUS_FRAME_BITS; i++) {
-    bits = (bits << 1) | (highs[startIdx + i] > avg ? 1 : 0);
-  }
-
-  // Assumed 36-bit layout, MSB first: id(8) battery(1) unknown(1) channel(2) temp(12) humidity(8) pad(4)
-  id = (bits >> 28) & 0xFF;
-  batteryLow = (bits >> 27) & 0x01;
-  int tempRaw = (bits >> 12) & 0x0FFF;
-  if(tempRaw & 0x0800) tempRaw -= 0x1000; // sign-extend 12-bit value
-  tempC = tempRaw / 10.0;
-  humidity = (bits >> 4) & 0xFF;
-
-  // No real CRC exists for this frame family (real receivers rely on 3x repeats and
-  // majority-vote, which a single captured frame can't do) - reject anything outside
-  // plausible weather-sensor ranges as a basic sanity filter instead
-  if(tempC < -40 || tempC > 60) return false;
-  if(humidity != 0xFF && humidity > 100) return false;
-
-  return true;
+  return false;
 }
 
 void classifyWeather() {
