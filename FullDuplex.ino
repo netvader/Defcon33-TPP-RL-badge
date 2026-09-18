@@ -26,6 +26,12 @@ struct SubGhzPreset {
 };
 
 const SubGhzPreset subghzPresets[] = {
+  // Matches the AGC/bandwidth/datarate baseline RX.ino/TX.ino/Jammer.ino/Weather.ino
+  // all still use (MDMCFG4=0x00, MDMCFG3=0x22, AGCCTRL2/1/0=0x40/0x00/0x91,
+  // FOCCFG left at the CC1101 POR default 0x14) - kept as index 0/default because
+  // switching Full Duplex's default to the real "AM650" preset's different
+  // AGCCTRL2 (0x07 vs the 0x40 used everywhere else) broke signal detection there.
+  {"Default", 0x30, 0x22, 0x00, 0x00, 0x91, 0x00, 0x40, 0x14},
   {"AM270", 0x30, 0x32, 0x67, 0x00, 0x40, 0x00, 0x03, 0x18},
   {"AM650", 0x30, 0x32, 0x17, 0x00, 0x91, 0x00, 0x07, 0x18},
   {"FM238", 0x04, 0x83, 0x67, 0x04, 0x91, 0x00, 0x07, 0x16},
@@ -35,9 +41,9 @@ const SubGhzPreset subghzPresets[] = {
   {"FM15K", 0x04, 0x32, 0xA7, 0x32, 0x91, 0x00, 0x07, 0x16}, // derived
   {"Pager", 0x04, 0x93, 0x64, 0x15, 0x91, 0x00, 0x07, 0x16}, // derived
 };
-#define NUM_SUBGHZ_PRESETS 8
+#define NUM_SUBGHZ_PRESETS 9
 
-int subghzPresetIndex = 1; // AM650 - closest match to the firmware's previous ASK/OOK default
+int subghzPresetIndex = 0; // "Default" - the baseline already proven to work elsewhere in this firmware
 volatile bool fdReconfigurePending = false;
 
 SPIClass fdSpiB(HSPI);
