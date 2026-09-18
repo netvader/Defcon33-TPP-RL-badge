@@ -170,6 +170,11 @@ extern bool sdCardPresent;
 extern bool cc1101APresent;
 extern bool cc1101BPresent;
 
+extern long data_to_send[];
+extern int data_count;
+extern bool txActive;
+extern bool TX_DEMO_MODE;
+
 extern unsigned long lastButtonPress;
 extern const unsigned long buttonDebounce;
 
@@ -275,6 +280,9 @@ void sendRawData(long *data, int count, int transmissions);
 void loadTXFromFile();
 void drawTXBinaryMenu();
 void sendTestPattern();
+void loadFlipperSubFile();
+bool parseAndSendSubFile(String filename);
+bool sendPrincetonFromKey(String keyHex, int bitCount, int te);
 
 // Jammer functions
 void startJammer();

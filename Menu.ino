@@ -559,9 +559,13 @@ void handleMenuSelect() {
           Serial.println(F("[Menu] TX from file"));
           loadTXFromFile();  // This will run demo mode if TX_DEMO_MODE is true
           break;
+        case 4:
+          Serial.println(F("[Menu] TX from Flipper .sub file"));
+          loadFlipperSubFile();
+          break;
       }
       break;
-      
+
     case MENU_JAMMER:
       switch(menuSelection) {
         case 0:
@@ -727,7 +731,7 @@ int getMaxMenuItems() {
   switch(currentMenu) {
     case MENU_MAIN: return 8;
     case MENU_RX: return 4;
-    case MENU_TX: return 4;  // Simple TX, Binary TX, TX Last RX, TX from File
+    case MENU_TX: return 5;  // Simple TX, Binary TX, TX Last RX, TX from File, Flipper .sub
     case MENU_JAMMER: return 3;
     case MENU_TESLA: return 2;
     case MENU_SETTINGS: return 5;

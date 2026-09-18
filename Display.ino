@@ -129,10 +129,11 @@ void drawTXMenu() {
     "Configure",
     "Binary TX",
     "TX from File",
-    "Last RX"
+    "Last RX",
+    "Flipper .sub"
   };
-  
-  int itemCount = 4;
+
+  int itemCount = 5;
   drawMenuItems(menuItems, itemCount);
 }
 

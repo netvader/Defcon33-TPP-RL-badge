@@ -29,6 +29,7 @@ void initializeFileSystem() {
   createDirectory("/rx_data");
   createDirectory("/tx_data");
   createDirectory("/config");
+  createDirectory("/subghz"); // drop Flipper Zero .sub files here
   
   // Start new log file
   startNewLogFile();
