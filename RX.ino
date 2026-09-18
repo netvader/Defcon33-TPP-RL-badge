@@ -112,14 +112,18 @@ void IRAM_ATTR rxEdgeISR() {
 }
 
 void beginRawCapture() {
-  noInterrupts();
   isrSampleIndex = 0;
   isrLastEdge = micros();
   isrCapturing = true;
-  interrupts();
+  // Only attach the interrupt for the duration of an actual capture window - left
+  // attached for a whole RX session, it fires continuously on GDO0's demodulator
+  // noise (no signal present most of the time) at a rate high enough to starve the
+  // watchdog and reset the badge
+  attachInterrupt(digitalPinToInterrupt(captureGdoPin), rxEdgeISR, CHANGE);
 }
 
 void endRawCapture() {
+  detachInterrupt(digitalPinToInterrupt(captureGdoPin));
   noInterrupts();
   isrCapturing = false;
   samplecount = isrSampleIndex;
@@ -260,13 +264,14 @@ void startRX() {
   Serial.println(F("[RX] CC1101 configured, calibrating baseline..."));
   Serial.printf("[RX] Frequency: %.2f MHz, Modulation: %s\n", frequency, getModulationName(mod));
 
-  // Arm raw pulse capture on the GDO0 data line
+  // Prepare (but don't yet arm) raw pulse capture on the GDO0 data line - the
+  // interrupt itself is only attached for the duration of an actual capture, see
+  // beginRawCapture()/endRawCapture()
   captureGdoPin = (activeModule == 0) ? CC1101_GDO0_A : CC1101_GDO0_B;
   pinMode(captureGdoPin, INPUT);
   rxCaptureActive = false;
   isrSampleIndex = 0;
   isrCapturing = false;
-  attachInterrupt(digitalPinToInterrupt(captureGdoPin), rxEdgeISR, CHANGE);
 
   // Set pixel mode
   pixelMode = PIXEL_RX;
@@ -282,13 +287,10 @@ void stopRX() {
   pixelMode = PIXEL_MENU;
 
   if(rxCaptureActive) {
-    endRawCapture();
+    endRawCapture(); // also detaches the interrupt
     rxCaptureActive = false;
   }
-  if(captureGdoPin != -1) {
-    detachInterrupt(digitalPinToInterrupt(captureGdoPin));
-    captureGdoPin = -1;
-  }
+  captureGdoPin = -1;
 
   strobeCC1101(0x36); // SIDLE
   

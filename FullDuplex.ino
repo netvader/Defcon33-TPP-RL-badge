@@ -188,16 +188,19 @@ void fdTask(void *param) {
     if(spike > 3) {
       lastSignalTime = millis();
       if(!capturing) {
-        noInterrupts();
+        // Only attach the interrupt for the duration of an actual capture window -
+        // left attached continuously, it fires nonstop on GDO0's demodulator noise
+        // (no signal present most of the time) fast enough to starve the watchdog
         fdSampleCount = 0;
         fdLastEdge = micros();
         fdCapturing = true;
-        interrupts();
+        attachInterrupt(digitalPinToInterrupt(CC1101_GDO0_A), fdEdgeISR, CHANGE);
         capturing = true;
       }
     }
 
     if(capturing && (millis() - lastSignalTime > 300 || fdSampleCount >= SAMPLE_SIZE)) {
+      detachInterrupt(digitalPinToInterrupt(CC1101_GDO0_A));
       noInterrupts();
       fdCapturing = false;
       int count = fdSampleCount;
@@ -242,7 +245,8 @@ void startFullDuplex() {
   fdLastActivityTime = millis();
   fdActive = true;
 
-  attachInterrupt(digitalPinToInterrupt(CC1101_GDO0_A), fdEdgeISR, CHANGE);
+  // The interrupt itself is only attached for the duration of an actual capture
+  // window (armed/disarmed inside fdTask()), not for the whole session
   xTaskCreatePinnedToCore(fdTask, "FullDuplexRX", 4096, NULL, 1, &fdTaskHandle, 0);
 
   currentMenu = MENU_FULLDUPLEX;
