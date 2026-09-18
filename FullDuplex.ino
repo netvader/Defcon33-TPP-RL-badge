@@ -50,7 +50,8 @@ volatile unsigned long fdLastEdge = 0;
 volatile bool fdCapturing = false;
 int fdPacketsCaptured = 0;
 int fdPacketsReplayed = 0;
-unsigned long fdLastActivityTime = 0;
+unsigned long fdLastCaptureTime = 0;
+unsigned long fdLastReplayTime = 0;
 TaskHandle_t fdTaskHandle = NULL;
 
 void IRAM_ATTR fdEdgeISR() {
@@ -204,7 +205,7 @@ void fdReplayOnModuleB(unsigned long *data, int count) {
   digitalWrite(CC1101_GDO0_B, LOW);
   fdStrobeB(0x36); // SIDLE
   fdPacketsReplayed++;
-  fdLastActivityTime = millis();
+  fdLastReplayTime = millis();
 }
 
 // Runs continuously on core 0: mirrors RX.ino's RSSI-spike capture logic, but
@@ -280,7 +281,7 @@ void fdTask(void *param) {
 
       if(count > 0) {
         fdPacketsCaptured++;
-        fdLastActivityTime = millis();
+        fdLastCaptureTime = millis();
         if(fdAutoReplay) {
           fdReplayOnModuleB(fdSample, count);
         }
@@ -313,7 +314,8 @@ void startFullDuplex() {
   fdCapturing = false;
   fdPacketsCaptured = 0;
   fdPacketsReplayed = 0;
-  fdLastActivityTime = millis();
+  fdLastCaptureTime = millis();
+  fdLastReplayTime = millis();
   fdActive = true;
 
   // The interrupt itself is only attached for the duration of an actual capture
@@ -378,15 +380,24 @@ void drawFullDuplexMenu() {
 void fullDuplexPixelEffect() {
   static float phase = 0;
 
-  // Base: slow blue breathing on module A's "listening" side
-  float breath = (sin(phase * 0.0174533) + 1.0) / 2.0;
-  uint8_t baseB = 20 + breath * 40;
-  for(int i = 0; i < NEOPIXEL_COUNT / 2; i++) {
-    pixels.setPixelColor(i, pixels.Color(0, 0, baseB));
+  // Module A's "listening" half: slow blue breathing normally, flashing bright
+  // white/cyan for a moment whenever a capture just completed
+  bool recentCapture = (millis() - fdLastCaptureTime) < 150;
+  if(recentCapture) {
+    for(int i = 0; i < NEOPIXEL_COUNT / 2; i++) {
+      pixels.setPixelColor(i, pixels.Color(200, 255, 255));
+    }
+  } else {
+    float breath = (sin(phase * 0.0174533) + 1.0) / 2.0;
+    uint8_t baseB = 20 + breath * 40;
+    for(int i = 0; i < NEOPIXEL_COUNT / 2; i++) {
+      pixels.setPixelColor(i, pixels.Color(0, 0, baseB));
+    }
   }
 
-  // Flash the other half red briefly whenever module B just replayed something
-  bool recentReplay = (millis() - fdLastActivityTime) < 150;
+  // Module B's "transmit" half: dim red normally, flashing bright red for a
+  // moment whenever it just replayed something
+  bool recentReplay = (millis() - fdLastReplayTime) < 150;
   for(int i = NEOPIXEL_COUNT / 2; i < NEOPIXEL_COUNT; i++) {
     pixels.setPixelColor(i, recentReplay ? pixels.Color(255, 0, 0) : pixels.Color(20, 0, 0));
   }
