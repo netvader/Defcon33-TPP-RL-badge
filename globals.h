@@ -293,6 +293,24 @@ bool sendGateTxFromKey(String keyHex, int bitCount);
 bool sendDooyaFromKey(String keyHex, int bitCount);
 bool sendLinearFromKey(String keyHex, int bitCount);
 bool sendMagellanFromKey(String keyHex, int bitCount);
+bool sendLinearDelta3FromKey(String keyHex, int bitCount);
+bool sendHoltekHt12xFromKey(String keyHex, int bitCount, int te);
+bool sendSmc5326FromKey(String keyHex, int bitCount, int te);
+bool sendIntertechnoV3FromKey(String keyHex, int bitCount);
+bool sendMastercodeFromKey(String keyHex, int bitCount);
+bool sendBettFromKey(String keyHex, int bitCount);
+bool sendDoitrandFromKey(String keyHex, int bitCount);
+bool sendElplastFromKey(String keyHex, int bitCount);
+bool sendNeroRadioFromKey(String keyHex, int bitCount);
+bool sendNeroSketchFromKey(String keyHex, int bitCount);
+bool sendClemsaFromKey(String keyHex, int bitCount);
+bool sendRogerFromKey(String keyHex, int bitCount);
+bool sendDickertMahsFromKey(String keyHex, int bitCount);
+bool sendFeronFromKey(String keyHex, int bitCount);
+bool sendHoneywellFromKey(String keyHex, int bitCount);
+int buildManchesterPulses(uint64_t code, int bitCount, int teHalf, bool invert);
+bool sendPowerSmartFromKey(String keyHex, int bitCount);
+bool sendReversRb2FromKey(String keyHex, int bitCount);
 
 // Jammer functions
 void startJammer();

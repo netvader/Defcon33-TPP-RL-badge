@@ -17,13 +17,22 @@
 // = microseconds. That maps directly onto sendRawData()'s existing alternating
 // HIGH/LOW format, so RAW playback just needs parsing, no protocol decoding.
 //
-// Princeton, Holtek, Ansonic, Hormann, Legrand, Nice Flor (fixed-code "Nice Flo",
-// not the rolling-code "Nice FloR-S"), Linear, Gate TX, Dooya and Magellan are all
-// fixed-code PWM protocols (no rolling code) - each bit is a mark/space pair, so
-// their encoders are ported directly from the real Flipper firmware source
-// (lib/subghz/protocols/*.c on flipperdevices/flipperzero-firmware) rather than
-// guessed at. Legrand reads its own "TE:" field from the file like Princeton does,
-// instead of using a fixed built-in timing.
+// All of the following are fixed-code PWM protocols (no rolling code) ported
+// directly from the real encoders in flipperdevices/flipperzero-firmware
+// (lib/subghz/protocols/*.c) rather than guessed at - each bit is a mark/space
+// pair with fixed timing:
+//   Princeton, Holtek, Ansonic, Hormann HSM, Legrand, Nice FLO (the fixed-code
+//   "Nice Flo", not the rolling-code "Nice FloR-S"), GateTX, Dooya, Linear,
+//   Magellan, LinearDelta3, Holtek_HT12X, SMC5326, Intertechno_V3, Mastercode,
+//   BETT, Doitrand, Elplast, Nero Radio, Nero Sketch, Clemsa, Roger,
+//   Dickert_MAHS, Feron, Honeywell.
+// Legrand, Holtek_HT12X and SMC5326 read their own "TE:" field from the file
+// (like Princeton does) instead of using a fixed built-in timing.
+//
+// Power Smart and Revers_RB2 use standard Manchester encoding instead of the
+// mark/space PWM above (see buildManchesterPulses()) - the conversion itself is
+// textbook Manchester, but I couldn't verify it matches Flipper's exact bit-polarity
+// convention without hardware, so treat these two as lower-confidence than the rest.
 //
 // NOT implemented:
 // - Somfy (Telis/Keytis): impossible without protocol-specific hardware knowledge -
@@ -31,12 +40,15 @@
 //   Somfy RTS uses a real encrypted rolling code tied to the physical remote's own
 //   secret counter. RAW playback of a captured Somfy signal still works, just not
 //   "encode from a Key".
-// - Hollarm: its real encoder needs a button/channel value it doesn't visibly read
-//   from the file in the source I read, and computes a checksum I couldn't verify
-//   without a real remote - left out rather than guessing.
+// - Hollarm, GangQi: their real encoders need a button/channel value neither
+//   visibly reads from the file in the source I read, plus a checksum I couldn't
+//   verify without a real remote - left out rather than guessing.
 // - Chamberlain (chamberlain_code): real encoder branches on the dial-code length
 //   (7/8/9 digits) with different checksum masks per length plus an unseen
 //   bit-transform helper - too much unverified surface area to port faithfully.
+// - MegaCode: each bit's gap width depends on BOTH the current and the previous
+//   bit's value (not a fixed per-bit mark/space pair), built backwards in the real
+//   encoder - too easy to get subtly wrong without hardware to check against.
 // - Nice FloR-S, KeeLoq family (came, hormann's rolling variants, etc.), Security+,
 //   etc.: each needs its own rolling-code/key-derivation scheme - out of scope here.
 //
@@ -373,6 +385,478 @@ bool sendMagellanFromKey(String keyHex, int bitCount) {
   return true;
 }
 
+// --- Batch 3: further simple fixed-code PWM protocols, all ported from the real
+// encoders the same way as the ones above. Two (Power Smart, Revers_RB2) use
+// standard Manchester encoding instead of mark/space PWM - see
+// buildManchesterPulses() below; that conversion is generic/textbook, but I
+// couldn't verify it matches Flipper's exact bit-polarity convention without
+// hardware, so treat those two as lower-confidence than the rest.
+
+// LinearDelta3 (te_short=500us, te_long=2000us, 8 bits)
+bool sendLinearDelta3FromKey(String keyHex, int bitCount) {
+  const int te_short = 500, te_long = 2000;
+  if(bitCount <= 1 || bitCount > 32) {
+    Serial.println(F("[TX] Invalid LinearDelta3 bit count in .sub file"));
+    return false;
+  }
+  uint32_t code = parseHexKey(keyHex);
+
+  data_count = 0;
+  for(int i = bitCount - 1; i >= 1 && data_count < 1990; i--) {
+    bool b = (code >> i) & 0x01;
+    if(b) { data_to_send[data_count++] = te_short; data_to_send[data_count++] = te_short * 7; }
+    else  { data_to_send[data_count++] = te_long;  data_to_send[data_count++] = te_long; }
+  }
+  bool lastBit = code & 0x01;
+  if(lastBit) { data_to_send[data_count++] = te_short; data_to_send[data_count++] = te_short * 73; }
+  else        { data_to_send[data_count++] = te_long;  data_to_send[data_count++] = te_short * 70; }
+
+  Serial.printf("[TX] LinearDelta3: %d bits, code=0x%08lX\n", bitCount, (unsigned long)code);
+  sendRawData(data_to_send, data_count, 5);
+  return true;
+}
+
+// Holtek HT12X (per-file "TE:", header=te*36, start bit=te, bit1=LOW te*2+HIGH te, bit0=LOW te+HIGH te*2)
+bool sendHoltekHt12xFromKey(String keyHex, int bitCount, int te) {
+  if(bitCount <= 0 || bitCount > 32 || te <= 0) {
+    Serial.println(F("[TX] Invalid Holtek_HT12X parameters in .sub file"));
+    return false;
+  }
+  uint32_t code = parseHexKey(keyHex);
+
+  data_count = 0;
+  data_to_send[data_count++] = te; // start bit (HIGH)
+  for(int i = bitCount - 1; i >= 0 && data_count < 1996; i--) {
+    bool b = (code >> i) & 0x01;
+    if(b) { data_to_send[data_count++] = te * 2; data_to_send[data_count++] = te; }
+    else  { data_to_send[data_count++] = te;     data_to_send[data_count++] = te * 2; }
+  }
+
+  Serial.printf("[TX] Holtek_HT12X: %d bits, TE=%dus, code=0x%08lX\n", bitCount, te, (unsigned long)code);
+  sendRawData(data_to_send, data_count, 5);
+  return true;
+}
+
+// SMC5326 (per-file "TE:", bit1=HIGH te*3+LOW te, bit0=HIGH te+LOW te*3, stop bit + guard)
+bool sendSmc5326FromKey(String keyHex, int bitCount, int te) {
+  if(bitCount <= 0 || bitCount > 32 || te <= 0) {
+    Serial.println(F("[TX] Invalid SMC5326 parameters in .sub file"));
+    return false;
+  }
+  uint32_t code = parseHexKey(keyHex);
+
+  data_count = 0;
+  for(int i = bitCount - 1; i >= 0 && data_count < 1990; i--) {
+    bool b = (code >> i) & 0x01;
+    if(b) { data_to_send[data_count++] = te * 3; data_to_send[data_count++] = te; }
+    else  { data_to_send[data_count++] = te;     data_to_send[data_count++] = te * 3; }
+  }
+  data_to_send[data_count++] = te;      // stop bit (HIGH)
+  data_to_send[data_count++] = te * 25; // guard (LOW)
+
+  Serial.printf("[TX] SMC5326: %d bits, TE=%dus, code=0x%08lX\n", bitCount, te, (unsigned long)code);
+  sendRawData(data_to_send, data_count, 5);
+  return true;
+}
+
+// Intertechno_V3 (te_short=275us, te_long=1375us, 32 bits) - the real protocol has a
+// "dimming" variant with a special bit at a fixed position for a different total bit
+// count; not handled here, only the plain on/off frame encoding
+bool sendIntertechnoV3FromKey(String keyHex, int bitCount) {
+  const int te_short = 275, te_long = 1375;
+  if(bitCount <= 0 || bitCount > 32) {
+    Serial.println(F("[TX] Invalid Intertechno_V3 bit count in .sub file"));
+    return false;
+  }
+  uint32_t code = parseHexKey(keyHex);
+
+  data_count = 0;
+  data_to_send[data_count++] = te_short;      // header (HIGH)
+  data_to_send[data_count++] = te_short * 38; // LOW
+  data_to_send[data_count++] = te_short;      // sync (HIGH)
+  data_to_send[data_count++] = te_short * 10; // LOW
+  for(int i = bitCount - 1; i >= 0 && data_count < 1980; i--) {
+    bool b = (code >> i) & 0x01;
+    if(b) {
+      data_to_send[data_count++] = te_short; data_to_send[data_count++] = te_long;
+      data_to_send[data_count++] = te_short; data_to_send[data_count++] = te_short;
+    } else {
+      data_to_send[data_count++] = te_short; data_to_send[data_count++] = te_short;
+      data_to_send[data_count++] = te_short; data_to_send[data_count++] = te_long;
+    }
+  }
+
+  Serial.printf("[TX] Intertechno_V3: %d bits, code=0x%08lX\n", bitCount, (unsigned long)code);
+  sendRawData(data_to_send, data_count, 5);
+  return true;
+}
+
+// Mastercode (te_short=1072us, te_long=2145us, 36 bits)
+bool sendMastercodeFromKey(String keyHex, int bitCount) {
+  const int te_short = 1072, te_long = 2145;
+  if(bitCount <= 1 || bitCount > 40) {
+    Serial.println(F("[TX] Invalid Mastercode bit count in .sub file"));
+    return false;
+  }
+  uint64_t code = parseHexKey(keyHex);
+
+  data_count = 0;
+  for(int i = bitCount - 1; i >= 1 && data_count < 1990; i--) {
+    bool b = (code >> i) & 0x01;
+    if(b) { data_to_send[data_count++] = te_long;  data_to_send[data_count++] = te_short; }
+    else  { data_to_send[data_count++] = te_short; data_to_send[data_count++] = te_long; }
+  }
+  bool lastBit = code & 0x01;
+  if(lastBit) { data_to_send[data_count++] = te_long;  data_to_send[data_count++] = te_short + te_short * 13; }
+  else        { data_to_send[data_count++] = te_short; data_to_send[data_count++] = te_long + te_short * 13; }
+
+  Serial.printf("[TX] Mastercode: %d bits, code=0x%08lX%08lX\n", bitCount, (unsigned long)(code >> 32), (unsigned long)code);
+  sendRawData(data_to_send, data_count, 5);
+  return true;
+}
+
+// BETT (te_short=340us, te_long=2000us, 18 bits)
+bool sendBettFromKey(String keyHex, int bitCount) {
+  const int te_short = 340, te_long = 2000;
+  if(bitCount <= 1 || bitCount > 32) {
+    Serial.println(F("[TX] Invalid BETT bit count in .sub file"));
+    return false;
+  }
+  uint32_t code = parseHexKey(keyHex);
+
+  data_count = 0;
+  for(int i = bitCount - 1; i >= 1 && data_count < 1990; i--) {
+    bool b = (code >> i) & 0x01;
+    if(b) { data_to_send[data_count++] = te_long;  data_to_send[data_count++] = te_short; }
+    else  { data_to_send[data_count++] = te_short; data_to_send[data_count++] = te_long; }
+  }
+  bool lastBit = code & 0x01;
+  if(lastBit) { data_to_send[data_count++] = te_long;  data_to_send[data_count++] = te_short + te_long * 7; }
+  else        { data_to_send[data_count++] = te_short; data_to_send[data_count++] = te_long + te_long * 7; }
+
+  Serial.printf("[TX] BETT: %d bits, code=0x%08lX\n", bitCount, (unsigned long)code);
+  sendRawData(data_to_send, data_count, 5);
+  return true;
+}
+
+// Doitrand (te_short=400us, te_long=1100us, 37 bits)
+bool sendDoitrandFromKey(String keyHex, int bitCount) {
+  const int te_short = 400, te_long = 1100;
+  if(bitCount <= 0 || bitCount > 40) {
+    Serial.println(F("[TX] Invalid Doitrand bit count in .sub file"));
+    return false;
+  }
+  uint64_t code = parseHexKey(keyHex);
+
+  data_count = 0;
+  data_to_send[data_count++] = te_short * 2 - 100; // start bit (HIGH)
+  for(int i = bitCount - 1; i >= 0 && data_count < 1996; i--) {
+    bool b = (code >> i) & 0x01;
+    if(b) { data_to_send[data_count++] = te_long;  data_to_send[data_count++] = te_short; }
+    else  { data_to_send[data_count++] = te_short; data_to_send[data_count++] = te_long; }
+  }
+
+  Serial.printf("[TX] Doitrand: %d bits, code=0x%08lX%08lX\n", bitCount, (unsigned long)(code >> 32), (unsigned long)code);
+  sendRawData(data_to_send, data_count, 5);
+  return true;
+}
+
+// Elplast (te_short=230us, te_long=1550us, 18 bits)
+bool sendElplastFromKey(String keyHex, int bitCount) {
+  const int te_short = 230, te_long = 1550;
+  if(bitCount <= 0 || bitCount > 32) {
+    Serial.println(F("[TX] Invalid Elplast bit count in .sub file"));
+    return false;
+  }
+  uint32_t code = parseHexKey(keyHex);
+
+  data_count = 0;
+  for(int i = bitCount - 1; i >= 0 && data_count < 1990; i--) {
+    bool b = (code >> i) & 0x01;
+    bool isLast = (i == 0);
+    if(b) {
+      data_to_send[data_count++] = te_long;
+      data_to_send[data_count++] = isLast ? (te_long * 8) : te_short;
+    } else {
+      data_to_send[data_count++] = te_short;
+      data_to_send[data_count++] = isLast ? (te_long * 8) : te_long;
+    }
+  }
+
+  Serial.printf("[TX] Elplast: %d bits, code=0x%08lX\n", bitCount, (unsigned long)code);
+  sendRawData(data_to_send, data_count, 5);
+  return true;
+}
+
+// Nero Radio (te_short=200us, te_long=400us, 56 bits) - 49x header toggle, start bit, data
+bool sendNeroRadioFromKey(String keyHex, int bitCount) {
+  const int te_short = 200, te_long = 400;
+  if(bitCount <= 1 || bitCount > 64) {
+    Serial.println(F("[TX] Invalid Nero Radio bit count in .sub file"));
+    return false;
+  }
+  uint64_t code = parseHexKey(keyHex);
+
+  data_count = 0;
+  for(int k = 0; k < 49 && data_count < 1900; k++) {
+    data_to_send[data_count++] = te_short; // HIGH
+    data_to_send[data_count++] = te_short; // LOW
+  }
+  data_to_send[data_count++] = te_short * 4; // start bit (HIGH)
+  data_to_send[data_count++] = te_short;     // LOW
+  for(int i = bitCount - 1; i >= 1 && data_count < 1990; i--) {
+    bool b = (code >> i) & 0x01;
+    if(b) { data_to_send[data_count++] = te_long;  data_to_send[data_count++] = te_short; }
+    else  { data_to_send[data_count++] = te_short; data_to_send[data_count++] = te_long; }
+  }
+  bool lastBit = code & 0x01;
+  if(lastBit) { data_to_send[data_count++] = te_long;  data_to_send[data_count++] = te_short * 37; }
+  else        { data_to_send[data_count++] = te_short; data_to_send[data_count++] = te_short * 37; }
+
+  Serial.printf("[TX] Nero Radio: %d bits, code=0x%08lX%08lX\n", bitCount, (unsigned long)(code >> 32), (unsigned long)code);
+  sendRawData(data_to_send, data_count, 5);
+  return true;
+}
+
+// Nero Sketch (te_short=330us, te_long=660us, 40 bits) - 47x header toggle, start/stop bits
+bool sendNeroSketchFromKey(String keyHex, int bitCount) {
+  const int te_short = 330, te_long = 660;
+  if(bitCount <= 0 || bitCount > 40) {
+    Serial.println(F("[TX] Invalid Nero Sketch bit count in .sub file"));
+    return false;
+  }
+  uint64_t code = parseHexKey(keyHex);
+
+  data_count = 0;
+  for(int k = 0; k < 47 && data_count < 1900; k++) {
+    data_to_send[data_count++] = te_short; // HIGH
+    data_to_send[data_count++] = te_short; // LOW
+  }
+  data_to_send[data_count++] = te_short * 4; // start bit (HIGH)
+  data_to_send[data_count++] = te_short;     // LOW
+  for(int i = bitCount - 1; i >= 0 && data_count < 1990; i--) {
+    bool b = (code >> i) & 0x01;
+    if(b) { data_to_send[data_count++] = te_long;  data_to_send[data_count++] = te_short; }
+    else  { data_to_send[data_count++] = te_short; data_to_send[data_count++] = te_long; }
+  }
+  data_to_send[data_count++] = te_short * 3; // stop bit (HIGH)
+  data_to_send[data_count++] = te_short;     // LOW
+
+  Serial.printf("[TX] Nero Sketch: %d bits, code=0x%08lX%08lX\n", bitCount, (unsigned long)(code >> 32), (unsigned long)code);
+  sendRawData(data_to_send, data_count, 5);
+  return true;
+}
+
+// Clemsa (te_short=385us, te_long=2695us, 18 bits)
+bool sendClemsaFromKey(String keyHex, int bitCount) {
+  const int te_short = 385, te_long = 2695;
+  if(bitCount <= 1 || bitCount > 32) {
+    Serial.println(F("[TX] Invalid Clemsa bit count in .sub file"));
+    return false;
+  }
+  uint32_t code = parseHexKey(keyHex);
+
+  data_count = 0;
+  for(int i = bitCount - 1; i >= 1 && data_count < 1990; i--) {
+    bool b = (code >> i) & 0x01;
+    if(b) { data_to_send[data_count++] = te_long;  data_to_send[data_count++] = te_short; }
+    else  { data_to_send[data_count++] = te_short; data_to_send[data_count++] = te_long; }
+  }
+  bool lastBit = code & 0x01;
+  if(lastBit) { data_to_send[data_count++] = te_long;  data_to_send[data_count++] = te_short + te_long * 7; }
+  else        { data_to_send[data_count++] = te_short; data_to_send[data_count++] = te_long + te_long * 7; }
+
+  Serial.printf("[TX] Clemsa: %d bits, code=0x%08lX\n", bitCount, (unsigned long)code);
+  sendRawData(data_to_send, data_count, 5);
+  return true;
+}
+
+// Roger (te_short=500us, te_long=1000us, 28 bits)
+bool sendRogerFromKey(String keyHex, int bitCount) {
+  const int te_short = 500, te_long = 1000;
+  if(bitCount <= 0 || bitCount > 32) {
+    Serial.println(F("[TX] Invalid Roger bit count in .sub file"));
+    return false;
+  }
+  uint32_t code = parseHexKey(keyHex);
+
+  data_count = 0;
+  for(int i = bitCount - 1; i >= 0 && data_count < 1990; i--) {
+    bool b = (code >> i) & 0x01;
+    bool isLast = (i == 0);
+    if(b) {
+      data_to_send[data_count++] = te_long;
+      data_to_send[data_count++] = isLast ? (te_short * 19) : te_short;
+    } else {
+      data_to_send[data_count++] = te_short;
+      data_to_send[data_count++] = isLast ? (te_short * 19) : te_long;
+    }
+  }
+
+  Serial.printf("[TX] Roger: %d bits, code=0x%08lX\n", bitCount, (unsigned long)code);
+  sendRawData(data_to_send, data_count, 5);
+  return true;
+}
+
+// Dickert_MAHS (te_short=400us, te_long=800us, 36 bits)
+bool sendDickertMahsFromKey(String keyHex, int bitCount) {
+  const int te_short = 400, te_long = 800;
+  if(bitCount <= 0 || bitCount > 40) {
+    Serial.println(F("[TX] Invalid Dickert_MAHS bit count in .sub file"));
+    return false;
+  }
+  uint64_t code = parseHexKey(keyHex);
+
+  data_count = 0;
+  data_to_send[data_count++] = te_short; // start bit (HIGH)
+  for(int i = bitCount - 1; i >= 0 && data_count < 1996; i--) {
+    bool b = (code >> i) & 0x01;
+    if(b) { data_to_send[data_count++] = te_long;  data_to_send[data_count++] = te_short; }
+    else  { data_to_send[data_count++] = te_short; data_to_send[data_count++] = te_long; }
+  }
+
+  Serial.printf("[TX] Dickert_MAHS: %d bits, code=0x%08lX%08lX\n", bitCount, (unsigned long)(code >> 32), (unsigned long)code);
+  sendRawData(data_to_send, data_count, 5);
+  return true;
+}
+
+// Feron (te_short=350us, te_long=750us, 32 bits)
+bool sendFeronFromKey(String keyHex, int bitCount) {
+  const int te_short = 350, te_long = 750;
+  if(bitCount <= 0 || bitCount > 32) {
+    Serial.println(F("[TX] Invalid Feron bit count in .sub file"));
+    return false;
+  }
+  uint32_t code = parseHexKey(keyHex);
+
+  data_count = 0;
+  for(int i = bitCount - 1; i >= 0 && data_count < 1980; i--) {
+    bool b = (code >> i) & 0x01;
+    bool isLast = (i == 0);
+    if(b) {
+      data_to_send[data_count++] = te_long;
+      if(isLast) {
+        data_to_send[data_count++] = te_short + 150;
+        data_to_send[data_count++] = te_short + 150;
+        data_to_send[data_count++] = te_long * 6;
+      } else {
+        data_to_send[data_count++] = te_short;
+      }
+    } else {
+      data_to_send[data_count++] = te_short;
+      if(isLast) {
+        data_to_send[data_count++] = te_short + 150;
+        data_to_send[data_count++] = te_short + 150;
+        data_to_send[data_count++] = te_long * 6;
+      } else {
+        data_to_send[data_count++] = te_long;
+      }
+    }
+  }
+
+  Serial.printf("[TX] Feron: %d bits, code=0x%08lX\n", bitCount, (unsigned long)code);
+  sendRawData(data_to_send, data_count, 5);
+  return true;
+}
+
+// Honeywell (te_short=160us, te_long=320us, 48 bits)
+bool sendHoneywellFromKey(String keyHex, int bitCount) {
+  const int te_short = 160, te_long = 320;
+  if(bitCount <= 0 || bitCount > 48) {
+    Serial.println(F("[TX] Invalid Honeywell bit count in .sub file"));
+    return false;
+  }
+  uint64_t code = parseHexKey(keyHex);
+
+  data_count = 0;
+  for(int i = bitCount - 1; i >= 0 && data_count < 1990; i--) {
+    bool b = (code >> i) & 0x01;
+    if(b) { data_to_send[data_count++] = te_long;  data_to_send[data_count++] = te_short; }
+    else  { data_to_send[data_count++] = te_short; data_to_send[data_count++] = te_long; }
+  }
+  data_to_send[data_count++] = te_short * 3; // trailing (HIGH)
+
+  Serial.printf("[TX] Honeywell: %d bits, code=0x%08lX%08lX\n", bitCount, (unsigned long)(code >> 32), (unsigned long)code);
+  sendRawData(data_to_send, data_count, 5);
+  return true;
+}
+
+// Generic standard Manchester encoder (half-period = teHalf). Builds a half-bit
+// level sequence, merges consecutive equal-level halves into single durations, and
+// drops any leading LOW run (equivalent to idle silence) so the result starts on a
+// HIGH duration like sendRawData() expects. invert flips which half is HIGH/LOW per
+// bit, since Power Smart and Revers_RB2 use opposite polarity conventions.
+int buildManchesterPulses(uint64_t code, int bitCount, int teHalf, bool invert) {
+  bool levels[128];
+  int halfCount = 0;
+  for(int i = bitCount - 1; i >= 0 && halfCount < 126; i--) {
+    bool b = (code >> i) & 0x01;
+    if(invert) b = !b;
+    if(b) { levels[halfCount++] = true;  levels[halfCount++] = false; }
+    else  { levels[halfCount++] = false; levels[halfCount++] = true; }
+  }
+
+  data_count = 0;
+  int i = 0;
+  while(i < halfCount && !levels[i]) i++; // drop a leading LOW run
+  if(i >= halfCount) return 0;
+
+  bool curLevel = true;
+  unsigned long dur = 0;
+  for(; i < halfCount; i++) {
+    if(levels[i] == curLevel) {
+      dur += teHalf;
+    } else {
+      data_to_send[data_count++] = dur;
+      curLevel = levels[i];
+      dur = teHalf;
+    }
+  }
+  if(dur > 0) data_to_send[data_count++] = dur;
+  return data_count;
+}
+
+// Power Smart (te_short=225us, 64 bits, Manchester) - real firmware transmits the
+// same 64-bit frame 8 times back to back; approximated here as sendRawData()'s
+// repeat count instead of baking 8x into one buffer
+bool sendPowerSmartFromKey(String keyHex, int bitCount) {
+  const int te_short = 225;
+  if(bitCount <= 0 || bitCount > 64) {
+    Serial.println(F("[TX] Invalid Power Smart bit count in .sub file"));
+    return false;
+  }
+  uint64_t code = parseHexKey(keyHex);
+
+  if(buildManchesterPulses(code, bitCount, te_short, true) == 0) {
+    Serial.println(F("[TX] Power Smart: empty frame"));
+    return false;
+  }
+
+  Serial.printf("[TX] Power Smart: %d bits, code=0x%08lX%08lX\n", bitCount, (unsigned long)(code >> 32), (unsigned long)code);
+  sendRawData(data_to_send, data_count, 8);
+  return true;
+}
+
+// Revers_RB2 (te_short=250us, 64 bits, Manchester) - real firmware repeats the frame
+// 6 times internally; approximated here via sendRawData()'s repeat count
+bool sendReversRb2FromKey(String keyHex, int bitCount) {
+  const int te_short = 250;
+  if(bitCount <= 0 || bitCount > 64) {
+    Serial.println(F("[TX] Invalid Revers_RB2 bit count in .sub file"));
+    return false;
+  }
+  uint64_t code = parseHexKey(keyHex);
+
+  if(buildManchesterPulses(code, bitCount, te_short, false) == 0) {
+    Serial.println(F("[TX] Revers_RB2: empty frame"));
+    return false;
+  }
+
+  Serial.printf("[TX] Revers_RB2: %d bits, code=0x%08lX%08lX\n", bitCount, (unsigned long)(code >> 32), (unsigned long)code);
+  sendRawData(data_to_send, data_count, 6);
+  return true;
+}
+
 bool parseAndSendSubFile(String filename) {
   Serial.printf("[TX] Loading Flipper .sub file: %s\n", filename.c_str());
 
@@ -482,6 +966,57 @@ bool parseAndSendSubFile(String filename) {
   }
   if(protocol == "Magellan") {
     return sendMagellanFromKey(keyHex, bitCount);
+  }
+  if(protocol == "LinearDelta3") {
+    return sendLinearDelta3FromKey(keyHex, bitCount);
+  }
+  if(protocol == "Holtek_HT12X") {
+    return sendHoltekHt12xFromKey(keyHex, bitCount, te);
+  }
+  if(protocol == "SMC5326") {
+    return sendSmc5326FromKey(keyHex, bitCount, te);
+  }
+  if(protocol == "Intertechno_V3") {
+    return sendIntertechnoV3FromKey(keyHex, bitCount);
+  }
+  if(protocol == "Mastercode") {
+    return sendMastercodeFromKey(keyHex, bitCount);
+  }
+  if(protocol == "BETT") {
+    return sendBettFromKey(keyHex, bitCount);
+  }
+  if(protocol == "Doitrand") {
+    return sendDoitrandFromKey(keyHex, bitCount);
+  }
+  if(protocol == "Elplast") {
+    return sendElplastFromKey(keyHex, bitCount);
+  }
+  if(protocol == "Nero Radio") {
+    return sendNeroRadioFromKey(keyHex, bitCount);
+  }
+  if(protocol == "Nero Sketch") {
+    return sendNeroSketchFromKey(keyHex, bitCount);
+  }
+  if(protocol == "Clemsa") {
+    return sendClemsaFromKey(keyHex, bitCount);
+  }
+  if(protocol == "Roger") {
+    return sendRogerFromKey(keyHex, bitCount);
+  }
+  if(protocol == "Dickert_MAHS") {
+    return sendDickertMahsFromKey(keyHex, bitCount);
+  }
+  if(protocol == "Feron") {
+    return sendFeronFromKey(keyHex, bitCount);
+  }
+  if(protocol == "Honeywell") {
+    return sendHoneywellFromKey(keyHex, bitCount);
+  }
+  if(protocol == "Power Smart") {
+    return sendPowerSmartFromKey(keyHex, bitCount);
+  }
+  if(protocol == "Revers_RB2") {
+    return sendReversRb2FromKey(keyHex, bitCount);
   }
 
   Serial.printf("[TX] Unsupported .sub protocol: %s\n", protocol.c_str());
