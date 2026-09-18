@@ -16,12 +16,16 @@ void handleButtons() {
     return;
   }
   
-  // If in RX mode and any other button is pressed, stop RX and go back to menu
+  // If in RX (or Weather Station) mode and any other button is pressed, stop and go back to menu
   if (raw_rx == "1") {
-    if (digitalRead(BTN_UP) == LOW || digitalRead(BTN_DOWN) == LOW || 
+    if (digitalRead(BTN_UP) == LOW || digitalRead(BTN_DOWN) == LOW ||
         digitalRead(BTN_RIGHT) == LOW || digitalRead(BTN_SELECT) == LOW) {
       lastButtonPress = millis();
-      stopRX();
+      if(currentMenu == MENU_WEATHER) {
+        stopWeatherStation();
+      } else {
+        stopRX();
+      }
       return;
     }
   }
@@ -298,6 +302,7 @@ void printStatus() {
     case MENU_ABOUT: Serial.println("ABOUT"); break;
     case MENU_CREDITS: Serial.println("CREDITS"); break;
     case MENU_TX_BINARY: Serial.println("TX BINARY"); break;
+    case MENU_WEATHER: Serial.println("WEATHER"); break;
     default: Serial.printf("%d\n", currentMenu); break;
   }
   Serial.println(F("==================\n"));
@@ -500,9 +505,13 @@ void handleMenuSelect() {
           currentMenu = MENU_ABOUT;
           Serial.println(F("[Menu] Opening About"));
           break;
-        case 6: 
+        case 6:
           currentMenu = MENU_CREDITS;
           Serial.println(F("[Menu] Opening Credits"));
+          break;
+        case 7:
+          Serial.println(F("[Menu] Opening Weather Station"));
+          startWeatherStation();
           break;
       }
       menuSelection = 0;
@@ -716,7 +725,7 @@ void handleMenuSelect() {
 
 int getMaxMenuItems() {
   switch(currentMenu) {
-    case MENU_MAIN: return 7;
+    case MENU_MAIN: return 8;
     case MENU_RX: return 4;
     case MENU_TX: return 4;  // Simple TX, Binary TX, TX Last RX, TX from File
     case MENU_JAMMER: return 3;

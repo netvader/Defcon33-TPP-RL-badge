@@ -209,6 +209,10 @@ void updatePixels() {
     case PIXEL_MENU:
       rainbowCycle();
       break;
+
+    case PIXEL_WEATHER:
+      weatherPixelEffect();
+      break;
   }
   
   pixels.show();

@@ -493,6 +493,10 @@ void updateWaterfall() {
         snprintf(fname, sizeof(fname), "/rx_data/rx_%lu.txt", millis());
         saveRXData(fname);
       }
+
+      if(weatherListening) {
+        tryDecodeWeather();
+      }
     }
   }
 }

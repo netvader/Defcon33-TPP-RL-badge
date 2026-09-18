@@ -30,6 +30,9 @@ void updateDisplay() {
     case MENU_CREDITS:
       drawCredits();
       break;
+    case MENU_WEATHER:
+      drawWeatherMenu();
+      break;
     case MENU_RX_CONFIG:
       drawRXConfig();
       break;
@@ -75,15 +78,16 @@ void drawMainMenu() {
   
   const char* menuItems[] = {
     "RX Mode",
-    "TX Mode", 
+    "TX Mode",
     "Jammer",
     "Tesla",
     "Settings",
     "About",
-    "Credits"
+    "Credits",
+    "Weather"
   };
-  
-  int itemCount = 7;
+
+  int itemCount = 8;
   drawMenuItems(menuItems, itemCount);
 }
 

@@ -77,7 +77,11 @@ void loop() {
   updatePixels();
   
   if(raw_rx == "1") {
-    handleRXMode();
+    if(currentMenu == MENU_WEATHER) {
+      handleWeatherMode();
+    } else {
+      handleRXMode();
+    }
   }
   
   if(jammer_tx == "1") {

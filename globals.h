@@ -79,7 +79,17 @@ enum MenuState {
   MENU_LED_PATTERN,
   MENU_LED_BRIGHTNESS,
   MENU_FREQUENCY_SELECT,
-  MENU_TESLA_CONFIG
+  MENU_TESLA_CONFIG,
+  MENU_WEATHER
+};
+
+// Weather station condition, derived from decoded temperature/humidity
+enum WeatherCondition {
+  WEATHER_NONE,    // no packet decoded yet
+  WEATHER_HOT,     // too hot
+  WEATHER_RAIN,    // high humidity
+  WEATHER_SUN,     // warm and dry
+  WEATHER_CLOUDY   // anything in between
 };
 
 // Display Settings
@@ -128,7 +138,8 @@ enum PixelMode {
   PIXEL_TX,
   PIXEL_JAMMER,
   PIXEL_TESLA,
-  PIXEL_MENU
+  PIXEL_MENU,
+  PIXEL_WEATHER
 };
 
 // Global variables
@@ -172,6 +183,16 @@ extern int teslaDelay;
 // Jammer configuration
 extern int jammerPower;
 extern bool jammerSweep;
+
+// Weather station
+extern bool weatherListening;
+extern WeatherCondition weatherCondition;
+extern float lastWeatherTempC;
+extern int lastWeatherHumidity;
+extern uint8_t lastWeatherSensorId;
+extern bool lastWeatherBatteryLow;
+extern int weatherPacketCount;
+extern unsigned long lastWeatherPacketTime;
 
 // LED Pattern preview state
 extern IdlePattern previewPattern;
@@ -299,6 +320,16 @@ void validateSettings();
 uint16_t calculateChecksum();
 void resetToFactory();
 void exportSettings();
+
+// Weather station functions
+void startWeatherStation();
+void stopWeatherStation();
+void handleWeatherMode();
+void drawWeatherMenu();
+void weatherPixelEffect();
+void tryDecodeWeather();
+void classifyWeather();
+bool decodeNexusWeather(unsigned long *samples, int count, float &tempC, int &humidity, uint8_t &id, bool &batteryLow);
 
 // File operations
 void initializeFileSystem();
