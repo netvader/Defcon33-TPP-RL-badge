@@ -17,12 +17,13 @@
 // = microseconds. That maps directly onto sendRawData()'s existing alternating
 // HIGH/LOW format, so RAW playback just needs parsing, no protocol decoding.
 //
-// Princeton, Holtek, Ansonic and Hormann are fixed-code PWM protocols (no rolling
-// code) - each bit is a mark/space pair, so their encoders are ported directly from
-// the real Flipper firmware source (lib/subghz/protocols/*.c on
-// flipperdevices/flipperzero-firmware) rather than guessed at. Legrand is likewise
-// ported, but reads its own "TE:" field from the file like Princeton does, instead
-// of using a fixed built-in timing.
+// Princeton, Holtek, Ansonic, Hormann, Legrand, Nice Flor (fixed-code "Nice Flo",
+// not the rolling-code "Nice FloR-S"), Linear, Gate TX, Dooya and Magellan are all
+// fixed-code PWM protocols (no rolling code) - each bit is a mark/space pair, so
+// their encoders are ported directly from the real Flipper firmware source
+// (lib/subghz/protocols/*.c on flipperdevices/flipperzero-firmware) rather than
+// guessed at. Legrand reads its own "TE:" field from the file like Princeton does,
+// instead of using a fixed built-in timing.
 //
 // NOT implemented:
 // - Somfy (Telis/Keytis): impossible without protocol-specific hardware knowledge -
@@ -33,9 +34,11 @@
 // - Hollarm: its real encoder needs a button/channel value it doesn't visibly read
 //   from the file in the source I read, and computes a checksum I couldn't verify
 //   without a real remote - left out rather than guessing.
-// - Every other named protocol (KeeLoq family, Nice, Came, Security+, etc.): each
-//   is its own can of worms (rolling codes, per-manufacturer key derivation) - out
-//   of scope here.
+// - Chamberlain (chamberlain_code): real encoder branches on the dial-code length
+//   (7/8/9 digits) with different checksum masks per length plus an unseen
+//   bit-transform helper - too much unverified surface area to port faithfully.
+// - Nice FloR-S, KeeLoq family (came, hormann's rolling variants, etc.), Security+,
+//   etc.: each needs its own rolling-code/key-derivation scheme - out of scope here.
 //
 // Any Protocol: value not listed above is reported as unsupported rather than guessed at.
 
@@ -206,6 +209,170 @@ bool sendLegrandFromKey(String keyHex, int bitCount, int te) {
   return true;
 }
 
+// Nice Flo (fixed-code, te_short=700us, te_long=1400us) - same shape as Holtek/Ansonic
+bool sendNiceFloFromKey(String keyHex, int bitCount) {
+  const int te_short = 700, te_long = 1400;
+  if(bitCount <= 0 || bitCount > 32) {
+    Serial.println(F("[TX] Invalid Nice Flo bit count in .sub file"));
+    return false;
+  }
+
+  uint32_t code = parseHexKey(keyHex);
+
+  data_count = 0;
+  data_to_send[data_count++] = te_short; // start bit (HIGH)
+  for(int i = bitCount - 1; i >= 0 && data_count < 1996; i--) {
+    bool bitVal = (code >> i) & 0x01;
+    if(bitVal) {
+      data_to_send[data_count++] = te_long;  // LOW
+      data_to_send[data_count++] = te_short; // HIGH
+    } else {
+      data_to_send[data_count++] = te_short; // LOW
+      data_to_send[data_count++] = te_long;  // HIGH
+    }
+  }
+
+  Serial.printf("[TX] Nice Flo: %d bits, code=0x%08lX\n", bitCount, (unsigned long)code);
+  sendRawData(data_to_send, data_count, 5);
+  return true;
+}
+
+// Gate TX (fixed-code, te_short=350us, te_long=700us, start bit is te_long not te_short)
+bool sendGateTxFromKey(String keyHex, int bitCount) {
+  const int te_short = 350, te_long = 700;
+  if(bitCount <= 0 || bitCount > 32) {
+    Serial.println(F("[TX] Invalid Gate TX bit count in .sub file"));
+    return false;
+  }
+
+  uint32_t code = parseHexKey(keyHex);
+
+  data_count = 0;
+  data_to_send[data_count++] = te_long; // start bit (HIGH)
+  for(int i = bitCount - 1; i >= 0 && data_count < 1996; i--) {
+    bool bitVal = (code >> i) & 0x01;
+    if(bitVal) {
+      data_to_send[data_count++] = te_long;  // LOW
+      data_to_send[data_count++] = te_short; // HIGH
+    } else {
+      data_to_send[data_count++] = te_short; // LOW
+      data_to_send[data_count++] = te_long;  // HIGH
+    }
+  }
+
+  Serial.printf("[TX] Gate TX: %d bits, code=0x%08lX\n", bitCount, (unsigned long)code);
+  sendRawData(data_to_send, data_count, 5);
+  return true;
+}
+
+// Dooya (roller shutter motors, te_short=366us, te_long=733us, 40 bits) - the real
+// header's exact length depends on data bit 0 (a minor rounding tweak); dropped here
+// like the other protocols' pure-silence headers, starting directly at the start bit
+bool sendDooyaFromKey(String keyHex, int bitCount) {
+  const int te_short = 366, te_long = 733;
+  if(bitCount <= 0 || bitCount > 40) {
+    Serial.println(F("[TX] Invalid Dooya bit count in .sub file"));
+    return false;
+  }
+
+  uint64_t code = parseHexKey(keyHex);
+
+  data_count = 0;
+  data_to_send[data_count++] = te_short * 13; // start bit (HIGH)
+  data_to_send[data_count++] = te_long * 2;   // LOW
+  for(int i = bitCount - 1; i >= 0 && data_count < 1996; i--) {
+    bool bitVal = (code >> i) & 0x01;
+    if(bitVal) {
+      data_to_send[data_count++] = te_long;  // HIGH
+      data_to_send[data_count++] = te_short; // LOW
+    } else {
+      data_to_send[data_count++] = te_short; // HIGH
+      data_to_send[data_count++] = te_long;  // LOW
+    }
+  }
+
+  Serial.printf("[TX] Dooya: %d bits, code=0x%08lX%08lX\n", bitCount, (unsigned long)(code >> 32), (unsigned long)code);
+  sendRawData(data_to_send, data_count, 5);
+  return true;
+}
+
+// Linear (fixed-code garage remotes, te_short=500us, te_long=1500us) - all bits
+// except the last are a HIGH,LOW pair; the last bit sends only its HIGH mark
+// followed by a long inter-frame gap instead of the usual LOW component
+bool sendLinearFromKey(String keyHex, int bitCount) {
+  const int te_short = 500, te_long = 1500;
+  if(bitCount <= 1 || bitCount > 32) {
+    Serial.println(F("[TX] Invalid Linear bit count in .sub file"));
+    return false;
+  }
+
+  uint32_t code = parseHexKey(keyHex);
+
+  data_count = 0;
+  for(int i = bitCount - 1; i >= 1 && data_count < 1990; i--) {
+    bool bitVal = (code >> i) & 0x01;
+    if(bitVal) {
+      data_to_send[data_count++] = te_long;  // HIGH
+      data_to_send[data_count++] = te_short; // LOW
+    } else {
+      data_to_send[data_count++] = te_short; // HIGH
+      data_to_send[data_count++] = te_long;  // LOW
+    }
+  }
+  bool lastBit = code & 0x01;
+  if(lastBit) {
+    data_to_send[data_count++] = te_long;      // HIGH
+    data_to_send[data_count++] = te_short * 42; // LOW gap
+  } else {
+    data_to_send[data_count++] = te_short;      // HIGH
+    data_to_send[data_count++] = te_short * 44; // LOW gap
+  }
+
+  Serial.printf("[TX] Linear: %d bits, code=0x%08lX\n", bitCount, (unsigned long)code);
+  sendRawData(data_to_send, data_count, 5);
+  return true;
+}
+
+// Magellan (fixed-code, te_short=200us, te_long=400us, 32 bits) - preamble of 12
+// toggle pulses, then a 3-pulse start bit, the data, and a long stop-bit gap
+bool sendMagellanFromKey(String keyHex, int bitCount) {
+  const int te_short = 200, te_long = 400;
+  if(bitCount <= 0 || bitCount > 32) {
+    Serial.println(F("[TX] Invalid Magellan bit count in .sub file"));
+    return false;
+  }
+
+  uint32_t code = parseHexKey(keyHex);
+
+  data_count = 0;
+  data_to_send[data_count++] = te_short * 4; // HIGH
+  data_to_send[data_count++] = te_short;     // LOW
+  for(int k = 0; k < 12 && data_count < 1970; k++) {
+    data_to_send[data_count++] = te_short; // HIGH
+    data_to_send[data_count++] = te_short; // LOW
+  }
+  data_to_send[data_count++] = te_short; // HIGH
+  data_to_send[data_count++] = te_long;  // LOW
+  data_to_send[data_count++] = te_long * 3; // HIGH (start bit)
+  data_to_send[data_count++] = te_long;     // LOW
+  for(int i = bitCount - 1; i >= 0 && data_count < 1990; i--) {
+    bool bitVal = (code >> i) & 0x01;
+    if(bitVal) {
+      data_to_send[data_count++] = te_short; // HIGH
+      data_to_send[data_count++] = te_long;  // LOW
+    } else {
+      data_to_send[data_count++] = te_long;  // HIGH
+      data_to_send[data_count++] = te_short; // LOW
+    }
+  }
+  data_to_send[data_count++] = te_short;      // HIGH (stop bit)
+  data_to_send[data_count++] = te_long * 100; // LOW
+
+  Serial.printf("[TX] Magellan: %d bits, code=0x%08lX\n", bitCount, (unsigned long)code);
+  sendRawData(data_to_send, data_count, 5);
+  return true;
+}
+
 bool parseAndSendSubFile(String filename) {
   Serial.printf("[TX] Loading Flipper .sub file: %s\n", filename.c_str());
 
@@ -295,11 +462,26 @@ bool parseAndSendSubFile(String filename) {
   if(protocol == "Ansonic") {
     return sendAnsonicFromKey(keyHex, bitCount);
   }
-  if(protocol == "Hormann") {
+  if(protocol == "Hormann HSM") {
     return sendHormannFromKey(keyHex, bitCount);
   }
   if(protocol == "Legrand") {
     return sendLegrandFromKey(keyHex, bitCount, te);
+  }
+  if(protocol == "Nice FLO") {
+    return sendNiceFloFromKey(keyHex, bitCount);
+  }
+  if(protocol == "GateTX") {
+    return sendGateTxFromKey(keyHex, bitCount);
+  }
+  if(protocol == "Dooya") {
+    return sendDooyaFromKey(keyHex, bitCount);
+  }
+  if(protocol == "Linear") {
+    return sendLinearFromKey(keyHex, bitCount);
+  }
+  if(protocol == "Magellan") {
+    return sendMagellanFromKey(keyHex, bitCount);
   }
 
   Serial.printf("[TX] Unsupported .sub protocol: %s\n", protocol.c_str());

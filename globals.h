@@ -288,6 +288,11 @@ bool sendHoltekFromKey(String keyHex, int bitCount);
 bool sendAnsonicFromKey(String keyHex, int bitCount);
 bool sendHormannFromKey(String keyHex, int bitCount);
 bool sendLegrandFromKey(String keyHex, int bitCount, int te);
+bool sendNiceFloFromKey(String keyHex, int bitCount);
+bool sendGateTxFromKey(String keyHex, int bitCount);
+bool sendDooyaFromKey(String keyHex, int bitCount);
+bool sendLinearFromKey(String keyHex, int bitCount);
+bool sendMagellanFromKey(String keyHex, int bitCount);
 
 // Jammer functions
 void startJammer();
