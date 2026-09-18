@@ -11,6 +11,35 @@
 // retransmit it elsewhere), which is why it's kept as its own explicit mode rather
 // than something that happens automatically.
 
+// Named SubGHz presets, matching the ones Flipper Zero's own Read/Raw apps offer.
+// AM270/AM650/FM238/FM476/FM12K are copied byte-for-byte from Flipper's own
+// lib/subghz/devices/cc1101_configs.c (flipperdevices/flipperzero-firmware) - high
+// confidence, verified against real firmware source. FM95/FM15K/Pager are NOT in
+// that file - they only show up in community documentation (deviation/bandwidth/
+// datarate specs, no register dump), so their MDMCFG3/4/DEVIATN values below are
+// derived from those specs via the CC1101 datasheet formulas, not copied from a
+// real source - lower confidence, verify against a real Flipper if it matters.
+struct SubGhzPreset {
+  const char* name;
+  byte mdmcfg2, mdmcfg3, mdmcfg4, deviatn;
+  byte agcctrl0, agcctrl1, agcctrl2, foccfg;
+};
+
+const SubGhzPreset subghzPresets[] = {
+  {"AM270", 0x30, 0x32, 0x67, 0x00, 0x40, 0x00, 0x03, 0x18},
+  {"AM650", 0x30, 0x32, 0x17, 0x00, 0x91, 0x00, 0x07, 0x18},
+  {"FM238", 0x04, 0x83, 0x67, 0x04, 0x91, 0x00, 0x07, 0x16},
+  {"FM476", 0x04, 0x83, 0x67, 0x47, 0x91, 0x00, 0x07, 0x16},
+  {"FM12K", 0x04, 0x83, 0x67, 0x30, 0x91, 0x00, 0x07, 0x16},
+  {"FM95",  0x04, 0x83, 0x67, 0x24, 0x91, 0x00, 0x07, 0x16}, // derived
+  {"FM15K", 0x04, 0x32, 0xA7, 0x32, 0x91, 0x00, 0x07, 0x16}, // derived
+  {"Pager", 0x04, 0x93, 0x64, 0x15, 0x91, 0x00, 0x07, 0x16}, // derived
+};
+#define NUM_SUBGHZ_PRESETS 8
+
+int subghzPresetIndex = 1; // AM650 - closest match to the firmware's previous ASK/OOK default
+volatile bool fdReconfigurePending = false;
+
 SPIClass fdSpiB(HSPI);
 
 bool fdActive = false;
@@ -89,22 +118,17 @@ void fdConfigureFrequencyMod(void (*writeReg)(byte, byte)) {
   writeReg(0x0E, freq1);
   writeReg(0x0F, freq0);
 
-  byte mdmcfg2 = 0x00;
-  switch(mod) {
-    case 0: mdmcfg2 = 0x00; break;
-    case 1: mdmcfg2 = 0x10; break;
-    case 2: mdmcfg2 = 0x30; break;
-    case 3: mdmcfg2 = 0x40; break;
-    case 4: mdmcfg2 = 0x70; break;
-  }
-  writeReg(0x10, 0x00);
-  writeReg(0x11, 0x22);
-  writeReg(0x12, mdmcfg2);
+  const SubGhzPreset &p = subghzPresets[subghzPresetIndex];
+  writeReg(0x10, p.mdmcfg4);
+  writeReg(0x11, p.mdmcfg3);
+  writeReg(0x12, p.mdmcfg2);
+  writeReg(0x15, p.deviatn);
   writeReg(0x07, 0x04);
   writeReg(0x08, 0x00);
-  writeReg(0x1B, 0x40);
-  writeReg(0x1C, 0x00);
-  writeReg(0x1D, 0x91);
+  writeReg(0x1B, p.agcctrl2);
+  writeReg(0x1C, p.agcctrl1);
+  writeReg(0x1D, p.agcctrl0);
+  writeReg(0x19, p.foccfg);
 }
 
 void fdSetupModuleA() {
@@ -140,6 +164,33 @@ void fdSetupModuleB() {
   fdStrobeB(0x36); // SIDLE - stay idle, only key up when actually replaying
 }
 
+// Called from the main loop (core 1), which already exclusively owns module B's
+// SPI bus (fdSpiB) - safe to touch directly, unlike module A (see fdReconfigurePending)
+void fdApplyToModuleB() {
+  fdConfigureFrequencyMod(fdWriteRegB);
+  fdStrobeB(0x33); // SCAL
+  delay(5);
+  fdStrobeB(0x36); // SIDLE
+}
+
+// UP/DOWN in the Full Duplex menu - cycles the shared frequency list (same one
+// Settings uses), applied to both modules
+void fdCycleFrequency(int direction) {
+  frequencyIndex = (frequencyIndex + direction + numFrequencies) % numFrequencies;
+  frequency = commonFrequencies[frequencyIndex];
+  fdApplyToModuleB();
+  fdReconfigurePending = true;
+  Serial.printf("[FullDuplex] Frequency: %.2f MHz\n", frequency);
+}
+
+// RIGHT in the Full Duplex menu - cycles through the named SubGHz presets
+void fdCyclePreset() {
+  subghzPresetIndex = (subghzPresetIndex + 1) % NUM_SUBGHZ_PRESETS;
+  fdApplyToModuleB();
+  fdReconfigurePending = true;
+  Serial.printf("[FullDuplex] Preset: %s\n", subghzPresets[subghzPresetIndex].name);
+}
+
 void fdReplayOnModuleB(unsigned long *data, int count) {
   fdStrobeB(0x35); // STX
   for(int i = 0; i < count; i += 2) {
@@ -169,6 +220,26 @@ void fdTask(void *param) {
   unsigned long lastSignalTime = 0;
 
   while(fdActive) {
+    // Re-apply frequency/preset from within this task (same core that owns module
+    // A's SPI bus) rather than letting the main loop touch it directly, which
+    // would race against the fdReadRegA() calls happening here every 5ms
+    if(fdReconfigurePending) {
+      if(capturing) {
+        detachInterrupt(digitalPinToInterrupt(CC1101_GDO0_A));
+        capturing = false;
+        fdCapturing = false;
+      }
+      fdConfigureFrequencyMod(fdWriteRegA);
+      fdStrobeA(0x33); // SCAL
+      delay(5);
+      fdStrobeA(0x34); // SRX
+      baselineSet = false;
+      baselineStart = millis();
+      baselineSum = 0;
+      baselineSamples = 0;
+      fdReconfigurePending = false;
+    }
+
     byte rawRSSI = fdReadRegA(0x34 | 0x40);
     int instantRSSI = (rawRSSI >= 128) ? (((int)(rawRSSI - 256) / 2) - 74) : ((rawRSSI / 2) - 74);
 
@@ -296,10 +367,10 @@ void drawFullDuplexMenu() {
   display.drawLine(0, 9, 127, 9, SH110X_WHITE);
 
   display.setCursor(0, 12);
-  display.printf("A(RX) -> B(TX)  %.2f\n", frequency);
+  display.printf("%.2fMHz  %s\n", frequency, subghzPresets[subghzPresetIndex].name);
   display.printf("Cap:%d Rep:%d\n", fdPacketsCaptured, fdPacketsReplayed);
   display.printf("Replay: %s\n", fdAutoReplay ? "ON" : "OFF");
-  display.print(F("SELECT=toggle"));
+  display.print(F("UP/DN=freq RT=mod"));
 
   display.display();
 }

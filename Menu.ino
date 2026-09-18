@@ -43,8 +43,16 @@ void handleButtons() {
       lastButtonPress = millis();
       fdAutoReplay = !fdAutoReplay;
       Serial.printf("[FullDuplex] Auto-replay: %s\n", fdAutoReplay ? "ON" : "OFF");
-    } else if (digitalRead(BTN_UP) == LOW || digitalRead(BTN_DOWN) == LOW ||
-               digitalRead(BTN_LEFT) == LOW || digitalRead(BTN_RIGHT) == LOW) {
+    } else if (digitalRead(BTN_UP) == LOW) {
+      lastButtonPress = millis();
+      fdCycleFrequency(1);
+    } else if (digitalRead(BTN_DOWN) == LOW) {
+      lastButtonPress = millis();
+      fdCycleFrequency(-1);
+    } else if (digitalRead(BTN_RIGHT) == LOW) {
+      lastButtonPress = millis();
+      fdCyclePreset();
+    } else if (digitalRead(BTN_LEFT) == LOW) {
       lastButtonPress = millis();
       stopFullDuplex();
     }

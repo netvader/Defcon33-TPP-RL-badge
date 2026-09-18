@@ -196,6 +196,7 @@ extern bool fdActive;
 extern bool fdAutoReplay;
 extern int fdPacketsCaptured;
 extern int fdPacketsReplayed;
+extern int subghzPresetIndex;
 
 // Weather station
 extern bool weatherListening;
@@ -371,6 +372,8 @@ void stopFullDuplex();
 void handleFullDuplexMode();
 void drawFullDuplexMenu();
 void fullDuplexPixelEffect();
+void fdCycleFrequency(int direction);
+void fdCyclePreset();
 
 // Weather station functions
 void startWeatherStation();
