@@ -63,6 +63,10 @@
 #define E07_FREQ_MIN_HZ 387000000UL
 #define E07_FREQ_MAX_HZ 464000000UL
 
+// How many times to repeat whichever .sub file gets sent - asked via a UP/DOWN
+// prompt right after picking a file, instead of each protocol hardcoding its own
+int subFileRepeatCount = 5;
+
 #define SUBGHZ_DIR "/subghz"
 
 uint64_t parseHexKey(String keyHex) {
@@ -103,7 +107,7 @@ bool sendPrincetonFromKey(String keyHex, int bitCount, int te) {
   data_to_send[data_count++] = te * 31;
 
   Serial.printf("[TX] Princeton: %d bits, TE=%dus, code=0x%08lX\n", bitCount, te, (unsigned long)code);
-  sendRawData(data_to_send, data_count, 5); // fixed-code remotes are usually repeated several times
+  sendRawData(data_to_send, data_count, subFileRepeatCount); // fixed-code remotes are usually repeated several times
   return true;
 }
 
@@ -131,7 +135,7 @@ bool sendHoltekFromKey(String keyHex, int bitCount) {
   }
 
   Serial.printf("[TX] Holtek: %d bits, code=0x%08lX%08lX\n", bitCount, (unsigned long)(code >> 32), (unsigned long)code);
-  sendRawData(data_to_send, data_count, 5);
+  sendRawData(data_to_send, data_count, subFileRepeatCount);
   return true;
 }
 
@@ -159,7 +163,7 @@ bool sendAnsonicFromKey(String keyHex, int bitCount) {
   }
 
   Serial.printf("[TX] Ansonic: %d bits, code=0x%08lX\n", bitCount, (unsigned long)code);
-  sendRawData(data_to_send, data_count, 5);
+  sendRawData(data_to_send, data_count, subFileRepeatCount);
   return true;
 }
 
@@ -191,7 +195,7 @@ bool sendHormannFromKey(String keyHex, int bitCount) {
   }
 
   Serial.printf("[TX] Hormann: %d bits, code=0x%08lX%08lX\n", bitCount, (unsigned long)(code >> 32), (unsigned long)code);
-  sendRawData(data_to_send, data_count, 5);
+  sendRawData(data_to_send, data_count, subFileRepeatCount);
   return true;
 }
 
@@ -226,7 +230,7 @@ bool sendLegrandFromKey(String keyHex, int bitCount, int te) {
   }
 
   Serial.printf("[TX] Legrand: %d bits, TE=%dus, code=0x%08lX\n", bitCount, te, (unsigned long)code);
-  sendRawData(data_to_send, data_count, 2); // repeats are already baked into the buffer above
+  sendRawData(data_to_send, data_count, subFileRepeatCount); // repeats are already baked into the buffer above
   return true;
 }
 
@@ -254,7 +258,7 @@ bool sendNiceFloFromKey(String keyHex, int bitCount) {
   }
 
   Serial.printf("[TX] Nice Flo: %d bits, code=0x%08lX\n", bitCount, (unsigned long)code);
-  sendRawData(data_to_send, data_count, 5);
+  sendRawData(data_to_send, data_count, subFileRepeatCount);
   return true;
 }
 
@@ -282,7 +286,7 @@ bool sendGateTxFromKey(String keyHex, int bitCount) {
   }
 
   Serial.printf("[TX] Gate TX: %d bits, code=0x%08lX\n", bitCount, (unsigned long)code);
-  sendRawData(data_to_send, data_count, 5);
+  sendRawData(data_to_send, data_count, subFileRepeatCount);
   return true;
 }
 
@@ -313,7 +317,7 @@ bool sendDooyaFromKey(String keyHex, int bitCount) {
   }
 
   Serial.printf("[TX] Dooya: %d bits, code=0x%08lX%08lX\n", bitCount, (unsigned long)(code >> 32), (unsigned long)code);
-  sendRawData(data_to_send, data_count, 5);
+  sendRawData(data_to_send, data_count, subFileRepeatCount);
   return true;
 }
 
@@ -350,7 +354,7 @@ bool sendLinearFromKey(String keyHex, int bitCount) {
   }
 
   Serial.printf("[TX] Linear: %d bits, code=0x%08lX\n", bitCount, (unsigned long)code);
-  sendRawData(data_to_send, data_count, 5);
+  sendRawData(data_to_send, data_count, subFileRepeatCount);
   return true;
 }
 
@@ -390,7 +394,7 @@ bool sendMagellanFromKey(String keyHex, int bitCount) {
   data_to_send[data_count++] = te_long * 100; // LOW
 
   Serial.printf("[TX] Magellan: %d bits, code=0x%08lX\n", bitCount, (unsigned long)code);
-  sendRawData(data_to_send, data_count, 5);
+  sendRawData(data_to_send, data_count, subFileRepeatCount);
   return true;
 }
 
@@ -421,7 +425,7 @@ bool sendLinearDelta3FromKey(String keyHex, int bitCount) {
   else        { data_to_send[data_count++] = te_long;  data_to_send[data_count++] = te_short * 70; }
 
   Serial.printf("[TX] LinearDelta3: %d bits, code=0x%08lX\n", bitCount, (unsigned long)code);
-  sendRawData(data_to_send, data_count, 5);
+  sendRawData(data_to_send, data_count, subFileRepeatCount);
   return true;
 }
 
@@ -442,7 +446,7 @@ bool sendHoltekHt12xFromKey(String keyHex, int bitCount, int te) {
   }
 
   Serial.printf("[TX] Holtek_HT12X: %d bits, TE=%dus, code=0x%08lX\n", bitCount, te, (unsigned long)code);
-  sendRawData(data_to_send, data_count, 5);
+  sendRawData(data_to_send, data_count, subFileRepeatCount);
   return true;
 }
 
@@ -464,7 +468,7 @@ bool sendSmc5326FromKey(String keyHex, int bitCount, int te) {
   data_to_send[data_count++] = te * 25; // guard (LOW)
 
   Serial.printf("[TX] SMC5326: %d bits, TE=%dus, code=0x%08lX\n", bitCount, te, (unsigned long)code);
-  sendRawData(data_to_send, data_count, 5);
+  sendRawData(data_to_send, data_count, subFileRepeatCount);
   return true;
 }
 
@@ -496,7 +500,7 @@ bool sendIntertechnoV3FromKey(String keyHex, int bitCount) {
   }
 
   Serial.printf("[TX] Intertechno_V3: %d bits, code=0x%08lX\n", bitCount, (unsigned long)code);
-  sendRawData(data_to_send, data_count, 5);
+  sendRawData(data_to_send, data_count, subFileRepeatCount);
   return true;
 }
 
@@ -520,7 +524,7 @@ bool sendMastercodeFromKey(String keyHex, int bitCount) {
   else        { data_to_send[data_count++] = te_short; data_to_send[data_count++] = te_long + te_short * 13; }
 
   Serial.printf("[TX] Mastercode: %d bits, code=0x%08lX%08lX\n", bitCount, (unsigned long)(code >> 32), (unsigned long)code);
-  sendRawData(data_to_send, data_count, 5);
+  sendRawData(data_to_send, data_count, subFileRepeatCount);
   return true;
 }
 
@@ -544,7 +548,7 @@ bool sendBettFromKey(String keyHex, int bitCount) {
   else        { data_to_send[data_count++] = te_short; data_to_send[data_count++] = te_long + te_long * 7; }
 
   Serial.printf("[TX] BETT: %d bits, code=0x%08lX\n", bitCount, (unsigned long)code);
-  sendRawData(data_to_send, data_count, 5);
+  sendRawData(data_to_send, data_count, subFileRepeatCount);
   return true;
 }
 
@@ -566,7 +570,7 @@ bool sendDoitrandFromKey(String keyHex, int bitCount) {
   }
 
   Serial.printf("[TX] Doitrand: %d bits, code=0x%08lX%08lX\n", bitCount, (unsigned long)(code >> 32), (unsigned long)code);
-  sendRawData(data_to_send, data_count, 5);
+  sendRawData(data_to_send, data_count, subFileRepeatCount);
   return true;
 }
 
@@ -593,7 +597,7 @@ bool sendElplastFromKey(String keyHex, int bitCount) {
   }
 
   Serial.printf("[TX] Elplast: %d bits, code=0x%08lX\n", bitCount, (unsigned long)code);
-  sendRawData(data_to_send, data_count, 5);
+  sendRawData(data_to_send, data_count, subFileRepeatCount);
   return true;
 }
 
@@ -623,7 +627,7 @@ bool sendNeroRadioFromKey(String keyHex, int bitCount) {
   else        { data_to_send[data_count++] = te_short; data_to_send[data_count++] = te_short * 37; }
 
   Serial.printf("[TX] Nero Radio: %d bits, code=0x%08lX%08lX\n", bitCount, (unsigned long)(code >> 32), (unsigned long)code);
-  sendRawData(data_to_send, data_count, 5);
+  sendRawData(data_to_send, data_count, subFileRepeatCount);
   return true;
 }
 
@@ -652,7 +656,7 @@ bool sendNeroSketchFromKey(String keyHex, int bitCount) {
   data_to_send[data_count++] = te_short;     // LOW
 
   Serial.printf("[TX] Nero Sketch: %d bits, code=0x%08lX%08lX\n", bitCount, (unsigned long)(code >> 32), (unsigned long)code);
-  sendRawData(data_to_send, data_count, 5);
+  sendRawData(data_to_send, data_count, subFileRepeatCount);
   return true;
 }
 
@@ -676,7 +680,7 @@ bool sendClemsaFromKey(String keyHex, int bitCount) {
   else        { data_to_send[data_count++] = te_short; data_to_send[data_count++] = te_long + te_long * 7; }
 
   Serial.printf("[TX] Clemsa: %d bits, code=0x%08lX\n", bitCount, (unsigned long)code);
-  sendRawData(data_to_send, data_count, 5);
+  sendRawData(data_to_send, data_count, subFileRepeatCount);
   return true;
 }
 
@@ -703,7 +707,7 @@ bool sendRogerFromKey(String keyHex, int bitCount) {
   }
 
   Serial.printf("[TX] Roger: %d bits, code=0x%08lX\n", bitCount, (unsigned long)code);
-  sendRawData(data_to_send, data_count, 5);
+  sendRawData(data_to_send, data_count, subFileRepeatCount);
   return true;
 }
 
@@ -725,7 +729,7 @@ bool sendDickertMahsFromKey(String keyHex, int bitCount) {
   }
 
   Serial.printf("[TX] Dickert_MAHS: %d bits, code=0x%08lX%08lX\n", bitCount, (unsigned long)(code >> 32), (unsigned long)code);
-  sendRawData(data_to_send, data_count, 5);
+  sendRawData(data_to_send, data_count, subFileRepeatCount);
   return true;
 }
 
@@ -764,7 +768,7 @@ bool sendFeronFromKey(String keyHex, int bitCount) {
   }
 
   Serial.printf("[TX] Feron: %d bits, code=0x%08lX\n", bitCount, (unsigned long)code);
-  sendRawData(data_to_send, data_count, 5);
+  sendRawData(data_to_send, data_count, subFileRepeatCount);
   return true;
 }
 
@@ -786,7 +790,7 @@ bool sendHoneywellFromKey(String keyHex, int bitCount) {
   data_to_send[data_count++] = te_short * 3; // trailing (HIGH)
 
   Serial.printf("[TX] Honeywell: %d bits, code=0x%08lX%08lX\n", bitCount, (unsigned long)(code >> 32), (unsigned long)code);
-  sendRawData(data_to_send, data_count, 5);
+  sendRawData(data_to_send, data_count, subFileRepeatCount);
   return true;
 }
 
@@ -842,7 +846,7 @@ bool sendPowerSmartFromKey(String keyHex, int bitCount) {
   }
 
   Serial.printf("[TX] Power Smart: %d bits, code=0x%08lX%08lX\n", bitCount, (unsigned long)(code >> 32), (unsigned long)code);
-  sendRawData(data_to_send, data_count, 8);
+  sendRawData(data_to_send, data_count, subFileRepeatCount);
   return true;
 }
 
@@ -862,7 +866,7 @@ bool sendReversRb2FromKey(String keyHex, int bitCount) {
   }
 
   Serial.printf("[TX] Revers_RB2: %d bits, code=0x%08lX%08lX\n", bitCount, (unsigned long)(code >> 32), (unsigned long)code);
-  sendRawData(data_to_send, data_count, 6);
+  sendRawData(data_to_send, data_count, subFileRepeatCount);
   return true;
 }
 
@@ -954,7 +958,7 @@ bool parseAndSendSubFile(String filename) {
     display.printf("%.2f MHz\n", frequency);
     display.display();
     Serial.printf("[TX] Flipper .sub RAW: %d pulses\n", data_count);
-    sendRawData(data_to_send, data_count, 3);
+    sendRawData(data_to_send, data_count, subFileRepeatCount);
     return true;
   }
 
@@ -1119,27 +1123,53 @@ void loadFlipperSubFile() {
   bool browsing = true;
   bool confirmed = false;
 
+  // Scrolling marquee state for the currently-highlighted file, if its name is too
+  // long to fit - only the selected row scrolls, the rest stay statically truncated
+  int scrollOffset = 0;
+  unsigned long lastScrollTime = millis();
+  int lastSelected = -1;
+
   while(browsing) {
+    if(selected != lastSelected) {
+      scrollOffset = 0;
+      lastScrollTime = millis();
+      lastSelected = selected;
+    }
+
     display.clearDisplay();
     display.setCursor(0, 0);
-    display.print(F("=[ FLIPPER .SUB ]="));
+    display.print(F("=[ SUB FILES ]=")); // shorter than "FLIPPER .SUB" - that ran into the counter below
     display.setCursor(90, 0);
     display.printf("%d/%d", selected + 1, fileCount);
     display.drawLine(0, 9, 127, 9, SH110X_WHITE);
 
     for(int i = 0; i < maxVisible && (fileOffset + i) < fileCount; i++) {
-      if(fileOffset + i == selected) {
+      bool isSelected = (fileOffset + i == selected);
+      if(isSelected) {
         display.fillRect(0, 12 + i * 12, 128, 12, SH110X_WHITE);
         display.setTextColor(SH110X_BLACK);
       } else {
         display.setTextColor(SH110X_WHITE);
       }
       display.setCursor(2, 15 + i * 12);
-      String shortName = fileNames[fileOffset + i];
-      if(shortName.length() > 20) {
-        shortName = shortName.substring(0, 17) + "...";
+
+      String fullName = fileNames[fileOffset + i];
+      String shownName;
+      if(fullName.length() <= 20) {
+        shownName = fullName;
+      } else if(isSelected) {
+        if(millis() - lastScrollTime > 300) {
+          lastScrollTime = millis();
+          scrollOffset++;
+        }
+        String padded = fullName + "   ";
+        if(scrollOffset >= (int)padded.length()) scrollOffset = 0;
+        String doubled = padded + padded;
+        shownName = doubled.substring(scrollOffset, scrollOffset + 20);
+      } else {
+        shownName = fullName.substring(0, 17) + "...";
       }
-      display.print(shortName);
+      display.print(shownName);
     }
     display.setTextColor(SH110X_WHITE);
     display.display();
@@ -1174,7 +1204,58 @@ void loadFlipperSubFile() {
     return;
   }
 
-  Serial.printf("[TX] Sending \"%s\"\n", fileNames[selected].c_str());
+  // Wait for the SELECT/RIGHT that just confirmed the file to be released before
+  // reading buttons again below, for the same reason as every other screen here
+  while(digitalRead(BTN_SELECT) == LOW || digitalRead(BTN_RIGHT) == LOW) {
+    delay(10);
+  }
+  delay(150);
+
+  // Ask how many times to send it, instead of each protocol silently hardcoding
+  // its own repeat count
+  bool pickingCount = true;
+  while(pickingCount) {
+    display.clearDisplay();
+    display.setCursor(0, 0);
+    display.println(F("=[ REPEAT COUNT ]="));
+    display.setCursor(10, 24);
+    display.setTextSize(2);
+    display.printf("%d", subFileRepeatCount);
+    display.setTextSize(1);
+    display.setCursor(0, 48);
+    display.println(F("UP/DOWN: +/- 1"));
+    display.println(F("SELECT: Send"));
+    display.display();
+
+    if(millis() - lastButtonPress > buttonDebounce) {
+      if(digitalRead(BTN_UP) == LOW) {
+        lastButtonPress = millis();
+        subFileRepeatCount++;
+        if(subFileRepeatCount > 20) subFileRepeatCount = 20;
+      } else if(digitalRead(BTN_DOWN) == LOW) {
+        lastButtonPress = millis();
+        subFileRepeatCount--;
+        if(subFileRepeatCount < 1) subFileRepeatCount = 1;
+      } else if(digitalRead(BTN_SELECT) == LOW || digitalRead(BTN_RIGHT) == LOW) {
+        lastButtonPress = millis();
+        pickingCount = false;
+      } else if(digitalRead(BTN_LEFT) == LOW) {
+        lastButtonPress = millis();
+        Serial.println(F("[TX] Flipper .sub cancelled"));
+        return;
+      }
+    }
+    delay(10);
+  }
+
+  // Wait for that confirm press to release too, before the actual send logic
+  // (which itself checks buttons for abort) starts reading them
+  while(digitalRead(BTN_SELECT) == LOW || digitalRead(BTN_RIGHT) == LOW) {
+    delay(10);
+  }
+  delay(150);
+
+  Serial.printf("[TX] Sending \"%s\" x%d\n", fileNames[selected].c_str(), subFileRepeatCount);
   String path = String(SUBGHZ_DIR) + "/" + fileNames[selected];
   parseAndSendSubFile(path);
 }

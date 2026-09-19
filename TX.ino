@@ -34,6 +34,30 @@ void strobeTX(byte cmd, int module) {
   digitalWrite(csPin, HIGH);
 }
 
+// Animates the TX NeoPixel effect during the gap between repeats, the same way
+// Tesla's animateTeslaDelay() already does - without this, the LEDs only ever
+// rendered one static frame at the very start of a transmission and then sat there
+// unchanged (or fully off between bursts) instead of visibly blinking while
+// something is actually being sent
+void animateTXDelay(int delayTime) {
+  unsigned long startDelay = millis();
+
+  while(millis() - startDelay < (unsigned long)delayTime) {
+    if(digitalRead(BTN_LEFT) == LOW || digitalRead(BTN_SELECT) == LOW) {
+      Serial.println(F("[TX] Transmission aborted by user"));
+      return;
+    }
+
+    if(millis() - lastPixelUpdate > 20) {
+      lastPixelUpdate = millis();
+      pulseAnimation(255, 0, 0);
+      pixels.show();
+    }
+
+    delay(1);
+  }
+}
+
 void showComingSoonAnimation() {
   // Fun "coming soon" animation
   display.clearDisplay();
@@ -552,7 +576,7 @@ void sendLastRX() {
     }
     
     digitalWrite(txPin, LOW);
-    delay(500); // Delay between transmissions
+    animateTXDelay(500); // also blinks the TX LEDs, same as Tesla does between its own repeats
   }
   
   Serial.println(F("[TX] Transmission complete"));
@@ -613,7 +637,7 @@ void sendRawData(long *data, int count, int transmissions) {
       }
     }
     
-    delay(2000); // Delay between retransmissions
+    animateTXDelay(2000); // also blinks the TX LEDs, same as Tesla does between its own repeats
   }
   
   Serial.println(F("[TX] Raw data transmission complete"));
@@ -877,10 +901,10 @@ void sendTestPattern() {
         delayMicroseconds(1000);
       }
       digitalWrite(txPin, LOW);
-      delay(100);
+      animateTXDelay(100);
     }
-    
-    delay(1000);
+
+    animateTXDelay(1000);
   }
   
   Serial.println(F("[TX] Test patterns complete"));

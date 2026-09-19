@@ -136,14 +136,13 @@ void sendTeslaSignal() {
   
   display.clearDisplay();
   display.setCursor(0,0);
-  display.println(F("=[ TESLA TX ]="));
-  display.drawRect(0, 0, 128, 10, SH110X_WHITE);
-  display.setCursor(0,15);
+  display.println(F("=[ TESLA TX ]=")); // no box around this - it made the title cramped/hard to read
+  display.setCursor(0,12);
   display.print(F("Freq: "));
   display.print(teslaFrequency, 2);
-  display.println(F(" MHz"));
-  display.println(F(""));
-  display.println(F("Sending signal..."));
+  display.print(F(" MHz"));
+  display.setCursor(0,24);
+  display.print(F("Sending signal..."));
   display.display();
   
   Serial.println(F("[TESLA] Signal sequence:"));
@@ -157,9 +156,9 @@ void sendTeslaSignal() {
   for (uint8_t t = 0; t < teslaTransmissions; t++) {
     Serial.printf("[TESLA] Transmission %d/%d\n", t + 1, teslaTransmissions);
     
-    // Update display with progress
-    display.fillRect(0, 35, 128, 10, SH110X_BLACK);
-    display.setCursor(0, 35);
+    // Update display with progress - y=36 is clear of "Sending signal..." above (ends around y=32)
+    display.fillRect(0, 36, 128, 10, SH110X_BLACK);
+    display.setCursor(0, 36);
     display.print(F("TX: "));
     display.print(t + 1);
     display.print(F("/"));
