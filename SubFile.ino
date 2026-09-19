@@ -870,7 +870,17 @@ bool sendReversRb2FromKey(String keyHex, int bitCount) {
   return true;
 }
 
-bool parseAndSendSubFile(String filename) {
+String subFileProtocol = "";
+long subFileFreqHz = 0;
+String subFilePreset = "";
+int subFileBitCount = 0;
+String subFileKeyHex = "";
+int subFileTE = 0;
+
+// Reads the file into the module-level fields above, without checking anything or
+// sending anything yet - split out so compatibility can be checked before the user
+// is asked how many times to send it
+bool parseSubFileHeader(String filename) {
   Serial.printf("[TX] Loading Flipper .sub file: %s\n", filename.c_str());
 
   File f = SD_MMC.open(filename, FILE_READ);
@@ -879,13 +889,12 @@ bool parseAndSendSubFile(String filename) {
     return false;
   }
 
-  String protocol = "";
-  long fileFreqHz = 0;
-  String preset = "";
-  int bitCount = 0;
-  String keyHex = "";
-  int te = 0;
-
+  subFileProtocol = "";
+  subFileFreqHz = 0;
+  subFilePreset = "";
+  subFileBitCount = 0;
+  subFileKeyHex = "";
+  subFileTE = 0;
   data_count = 0;
 
   while(f.available()) {
@@ -893,20 +902,20 @@ bool parseAndSendSubFile(String filename) {
     line.trim();
 
     if(line.startsWith("Frequency:")) {
-      fileFreqHz = line.substring(10).toInt();
+      subFileFreqHz = line.substring(10).toInt();
     } else if(line.startsWith("Preset:")) {
-      preset = line.substring(7);
-      preset.trim();
+      subFilePreset = line.substring(7);
+      subFilePreset.trim();
     } else if(line.startsWith("Protocol:")) {
-      protocol = line.substring(9);
-      protocol.trim();
+      subFileProtocol = line.substring(9);
+      subFileProtocol.trim();
     } else if(line.startsWith("Bit:")) {
-      bitCount = line.substring(4).toInt();
+      subFileBitCount = line.substring(4).toInt();
     } else if(line.startsWith("Key:")) {
-      keyHex = line.substring(4);
-      keyHex.trim();
+      subFileKeyHex = line.substring(4);
+      subFileKeyHex.trim();
     } else if(line.startsWith("TE:")) {
-      te = line.substring(3).toInt();
+      subFileTE = line.substring(3).toInt();
     } else if(line.startsWith("RAW_Data:")) {
       // A .sub file can have many RAW_Data lines - keep appending until the buffer is full
       String vals = line.substring(9);
@@ -923,34 +932,75 @@ bool parseAndSendSubFile(String filename) {
     }
   }
   f.close();
+  return true;
+}
 
-  if(fileFreqHz > 0) {
-    if(fileFreqHz < E07_FREQ_MIN_HZ || fileFreqHz > E07_FREQ_MAX_HZ) {
-      Serial.printf("[TX] Rejected .sub file: %.3f MHz is outside the E07 module's ~%.0f-%.0f MHz range\n",
-                    fileFreqHz / 1000000.0, E07_FREQ_MIN_HZ / 1000000.0, E07_FREQ_MAX_HZ / 1000000.0);
-      display.clearDisplay();
-      display.setCursor(0, 0);
-      display.println(F("Freq out of range"));
-      display.printf("%.3f MHz\n", fileFreqHz / 1000000.0);
-      display.printf("E07: %.0f-%.0fMHz\n", E07_FREQ_MIN_HZ / 1000000.0, E07_FREQ_MAX_HZ / 1000000.0);
-      display.display();
-      delay(2500);
-      return false;
-    }
-    frequency = fileFreqHz / 1000000.0;
+bool isSubProtocolSupported(String protocol) {
+  const char* supported[] = {
+    "RAW", "Princeton", "Holtek", "Ansonic", "Hormann HSM", "Legrand", "Nice FLO",
+    "GateTX", "Dooya", "Linear", "Magellan", "LinearDelta3", "Holtek_HT12X",
+    "SMC5326", "Intertechno_V3", "Mastercode", "BETT", "Doitrand", "Elplast",
+    "Nero Radio", "Nero Sketch", "Clemsa", "Roger", "Dickert_MAHS", "Feron",
+    "Honeywell", "Power Smart", "Revers_RB2"
+  };
+  for(int i = 0; i < (int)(sizeof(supported) / sizeof(supported[0])); i++) {
+    if(protocol == supported[i]) return true;
   }
-  if(preset.indexOf("Ook") >= 0) mod = 2;
-  else if(preset.indexOf("GFSK") >= 0) mod = 1;
-  else if(preset.indexOf("MSK") >= 0) mod = 4;
-  else if(preset.indexOf("FSK") >= 0) mod = 0; // 2FSK presets, checked after the more specific FSK variants above
+  return false;
+}
 
-  Serial.printf("[TX] .sub file: protocol=%s, %.2f MHz, mod=%d\n", protocol.c_str(), frequency, mod);
+// Checks the fields parseSubFileHeader() just read - frequency in the E07's range,
+// protocol actually supported - and shows the matching error screen if not. Doesn't
+// send anything either way; called before the repeat-count prompt so an
+// incompatible file is rejected up front instead of after the user picks a count.
+bool checkSubFileCompatible() {
+  if(subFileFreqHz > 0 && (subFileFreqHz < E07_FREQ_MIN_HZ || subFileFreqHz > E07_FREQ_MAX_HZ)) {
+    Serial.printf("[TX] Rejected .sub file: %.3f MHz is outside the E07 module's ~%.0f-%.0f MHz range\n",
+                  subFileFreqHz / 1000000.0, E07_FREQ_MIN_HZ / 1000000.0, E07_FREQ_MAX_HZ / 1000000.0);
+    display.clearDisplay();
+    display.setCursor(0, 0);
+    display.println(F("Freq out of range"));
+    display.printf("%.3f MHz\n", subFileFreqHz / 1000000.0);
+    display.printf("E07: %.0f-%.0fMHz\n", E07_FREQ_MIN_HZ / 1000000.0, E07_FREQ_MAX_HZ / 1000000.0);
+    display.display();
+    delay(2500);
+    return false;
+  }
 
-  if(protocol == "RAW") {
-    if(data_count == 0) {
-      debugPrint("No RAW data!", true, true, 2000);
-      return false;
-    }
+  if(!isSubProtocolSupported(subFileProtocol)) {
+    Serial.printf("[TX] Unsupported .sub protocol: %s\n", subFileProtocol.c_str());
+    display.clearDisplay();
+    display.setCursor(0, 20);
+    display.println(F("Unsupported"));
+    display.println(F("protocol:"));
+    display.println(subFileProtocol);
+    display.display();
+    delay(2000);
+    return false;
+  }
+
+  if(subFileProtocol == "RAW" && data_count == 0) {
+    debugPrint("No RAW data!", true, true, 2000);
+    return false;
+  }
+
+  return true;
+}
+
+// Applies frequency/modulation and actually sends, using the fields already parsed
+// and validated by the two functions above
+bool sendParsedSubFile() {
+  if(subFileFreqHz > 0) {
+    frequency = subFileFreqHz / 1000000.0;
+  }
+  if(subFilePreset.indexOf("Ook") >= 0) mod = 2;
+  else if(subFilePreset.indexOf("GFSK") >= 0) mod = 1;
+  else if(subFilePreset.indexOf("MSK") >= 0) mod = 4;
+  else if(subFilePreset.indexOf("FSK") >= 0) mod = 0; // 2FSK presets, checked after the more specific FSK variants above
+
+  Serial.printf("[TX] .sub file: protocol=%s, %.2f MHz, mod=%d\n", subFileProtocol.c_str(), frequency, mod);
+
+  if(subFileProtocol == "RAW") {
     display.clearDisplay();
     display.setCursor(0, 0);
     display.println(F("=[ FLIPPER RAW ]="));
@@ -962,98 +1012,37 @@ bool parseAndSendSubFile(String filename) {
     return true;
   }
 
-  if(protocol == "Princeton") {
-    return sendPrincetonFromKey(keyHex, bitCount, te);
-  }
-  if(protocol == "Holtek") {
-    return sendHoltekFromKey(keyHex, bitCount);
-  }
-  if(protocol == "Ansonic") {
-    return sendAnsonicFromKey(keyHex, bitCount);
-  }
-  if(protocol == "Hormann HSM") {
-    return sendHormannFromKey(keyHex, bitCount);
-  }
-  if(protocol == "Legrand") {
-    return sendLegrandFromKey(keyHex, bitCount, te);
-  }
-  if(protocol == "Nice FLO") {
-    return sendNiceFloFromKey(keyHex, bitCount);
-  }
-  if(protocol == "GateTX") {
-    return sendGateTxFromKey(keyHex, bitCount);
-  }
-  if(protocol == "Dooya") {
-    return sendDooyaFromKey(keyHex, bitCount);
-  }
-  if(protocol == "Linear") {
-    return sendLinearFromKey(keyHex, bitCount);
-  }
-  if(protocol == "Magellan") {
-    return sendMagellanFromKey(keyHex, bitCount);
-  }
-  if(protocol == "LinearDelta3") {
-    return sendLinearDelta3FromKey(keyHex, bitCount);
-  }
-  if(protocol == "Holtek_HT12X") {
-    return sendHoltekHt12xFromKey(keyHex, bitCount, te);
-  }
-  if(protocol == "SMC5326") {
-    return sendSmc5326FromKey(keyHex, bitCount, te);
-  }
-  if(protocol == "Intertechno_V3") {
-    return sendIntertechnoV3FromKey(keyHex, bitCount);
-  }
-  if(protocol == "Mastercode") {
-    return sendMastercodeFromKey(keyHex, bitCount);
-  }
-  if(protocol == "BETT") {
-    return sendBettFromKey(keyHex, bitCount);
-  }
-  if(protocol == "Doitrand") {
-    return sendDoitrandFromKey(keyHex, bitCount);
-  }
-  if(protocol == "Elplast") {
-    return sendElplastFromKey(keyHex, bitCount);
-  }
-  if(protocol == "Nero Radio") {
-    return sendNeroRadioFromKey(keyHex, bitCount);
-  }
-  if(protocol == "Nero Sketch") {
-    return sendNeroSketchFromKey(keyHex, bitCount);
-  }
-  if(protocol == "Clemsa") {
-    return sendClemsaFromKey(keyHex, bitCount);
-  }
-  if(protocol == "Roger") {
-    return sendRogerFromKey(keyHex, bitCount);
-  }
-  if(protocol == "Dickert_MAHS") {
-    return sendDickertMahsFromKey(keyHex, bitCount);
-  }
-  if(protocol == "Feron") {
-    return sendFeronFromKey(keyHex, bitCount);
-  }
-  if(protocol == "Honeywell") {
-    return sendHoneywellFromKey(keyHex, bitCount);
-  }
-  if(protocol == "Power Smart") {
-    return sendPowerSmartFromKey(keyHex, bitCount);
-  }
-  if(protocol == "Revers_RB2") {
-    return sendReversRb2FromKey(keyHex, bitCount);
-  }
+  if(subFileProtocol == "Princeton") return sendPrincetonFromKey(subFileKeyHex, subFileBitCount, subFileTE);
+  if(subFileProtocol == "Holtek") return sendHoltekFromKey(subFileKeyHex, subFileBitCount);
+  if(subFileProtocol == "Ansonic") return sendAnsonicFromKey(subFileKeyHex, subFileBitCount);
+  if(subFileProtocol == "Hormann HSM") return sendHormannFromKey(subFileKeyHex, subFileBitCount);
+  if(subFileProtocol == "Legrand") return sendLegrandFromKey(subFileKeyHex, subFileBitCount, subFileTE);
+  if(subFileProtocol == "Nice FLO") return sendNiceFloFromKey(subFileKeyHex, subFileBitCount);
+  if(subFileProtocol == "GateTX") return sendGateTxFromKey(subFileKeyHex, subFileBitCount);
+  if(subFileProtocol == "Dooya") return sendDooyaFromKey(subFileKeyHex, subFileBitCount);
+  if(subFileProtocol == "Linear") return sendLinearFromKey(subFileKeyHex, subFileBitCount);
+  if(subFileProtocol == "Magellan") return sendMagellanFromKey(subFileKeyHex, subFileBitCount);
+  if(subFileProtocol == "LinearDelta3") return sendLinearDelta3FromKey(subFileKeyHex, subFileBitCount);
+  if(subFileProtocol == "Holtek_HT12X") return sendHoltekHt12xFromKey(subFileKeyHex, subFileBitCount, subFileTE);
+  if(subFileProtocol == "SMC5326") return sendSmc5326FromKey(subFileKeyHex, subFileBitCount, subFileTE);
+  if(subFileProtocol == "Intertechno_V3") return sendIntertechnoV3FromKey(subFileKeyHex, subFileBitCount);
+  if(subFileProtocol == "Mastercode") return sendMastercodeFromKey(subFileKeyHex, subFileBitCount);
+  if(subFileProtocol == "BETT") return sendBettFromKey(subFileKeyHex, subFileBitCount);
+  if(subFileProtocol == "Doitrand") return sendDoitrandFromKey(subFileKeyHex, subFileBitCount);
+  if(subFileProtocol == "Elplast") return sendElplastFromKey(subFileKeyHex, subFileBitCount);
+  if(subFileProtocol == "Nero Radio") return sendNeroRadioFromKey(subFileKeyHex, subFileBitCount);
+  if(subFileProtocol == "Nero Sketch") return sendNeroSketchFromKey(subFileKeyHex, subFileBitCount);
+  if(subFileProtocol == "Clemsa") return sendClemsaFromKey(subFileKeyHex, subFileBitCount);
+  if(subFileProtocol == "Roger") return sendRogerFromKey(subFileKeyHex, subFileBitCount);
+  if(subFileProtocol == "Dickert_MAHS") return sendDickertMahsFromKey(subFileKeyHex, subFileBitCount);
+  if(subFileProtocol == "Feron") return sendFeronFromKey(subFileKeyHex, subFileBitCount);
+  if(subFileProtocol == "Honeywell") return sendHoneywellFromKey(subFileKeyHex, subFileBitCount);
+  if(subFileProtocol == "Power Smart") return sendPowerSmartFromKey(subFileKeyHex, subFileBitCount);
+  if(subFileProtocol == "Revers_RB2") return sendReversRb2FromKey(subFileKeyHex, subFileBitCount);
 
-  Serial.printf("[TX] Unsupported .sub protocol: %s\n", protocol.c_str());
-  display.clearDisplay();
-  display.setCursor(0, 20);
-  display.println(F("Unsupported"));
-  display.println(F("protocol:"));
-  display.println(protocol);
-  display.display();
-  delay(2000);
-  return false;
+  return false; // unreachable if checkSubFileCompatible() was called first
 }
+
 
 void loadFlipperSubFile() {
   if(TX_DEMO_MODE) {
@@ -1211,6 +1200,14 @@ void loadFlipperSubFile() {
   }
   delay(150);
 
+  // Parse and check compatibility (frequency in range, protocol supported) BEFORE
+  // asking how many times to send it - no point picking a repeat count for a file
+  // that's going to be rejected anyway
+  String path = String(SUBGHZ_DIR) + "/" + fileNames[selected];
+  if(!parseSubFileHeader(path) || !checkSubFileCompatible()) {
+    return;
+  }
+
   // Ask how many times to send it, instead of each protocol silently hardcoding
   // its own repeat count
   bool pickingCount = true;
@@ -1256,6 +1253,5 @@ void loadFlipperSubFile() {
   delay(150);
 
   Serial.printf("[TX] Sending \"%s\" x%d\n", fileNames[selected].c_str(), subFileRepeatCount);
-  String path = String(SUBGHZ_DIR) + "/" + fileNames[selected];
-  parseAndSendSubFile(path);
+  sendParsedSubFile();
 }
